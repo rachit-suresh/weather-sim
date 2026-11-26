@@ -8,6 +8,8 @@ Options (dict `cfg`, stored in the checkpoint as "rollout"):
   rain_head   "two_part"    spec RAIN-3 (D4): net output channel 6 is the logit of "rain > 1 mm/day"
   rain_ref    {mean, std, anom_std}  global mean/std of rain (mm/day) and the rain anomaly std (sqrt space),
                             needed to turn the gate into anomaly units (rain must use the sqrt transform)
+  rain_amount {loss, shape}  spec V2-E5: how the amount was trained (gamma likelihood); information only, the
+                            served rain is the same gated mean amount^2 as RAIN-3
 Rain gate (spec 1.2): hard (amount where logit > 0, else 0) in both modes; in mode "train" gradients flow as if the
 gate were sigmoid(logit) (straight-through), so training and inference see the same rain.
 """
@@ -32,13 +34,15 @@ def _gate_rain(z, logit, clim_k, ref, mode):
     else:
         g = hard
     z_tp = (g * amount - c) / ref["anom_std"]
-    return torch.cat([z[:, :TP], z_tp[:, None], z[:, TP + 1:]], dim=1)
+    return torch.cat([z[:, :TP], z_tp[:, None], z[:, TP + 1:]], dim=1), amount
 
 
 def rollout(net, hist: torch.Tensor, clim_targets: torch.Tensor, sincos_targets: torch.Tensor,
-            fixed: torch.Tensor, steps: int, cfg: dict | None = None, mode: str = "train", return_logits: bool = False):
+            fixed: torch.Tensor, steps: int, cfg: dict | None = None, mode: str = "train", return_logits: bool = False,
+            return_amount: bool = False):
     """hist [B,3,6,H,W]; clim_targets [B,steps,6,H,W]; sincos_targets [B,steps,2] -> [B,steps,6,H,W] anomalies
-    (and [B,steps,H,W] rain logits if return_logits and the two-part head is on)."""
+    (and [B,steps,H,W] rain logits if return_logits and the two-part head is on; with return_amount also the
+    ungated rain amount [B,steps,H,W] in sqrt(mm/day), spec V2-E5)."""
     cfg = cfg or {}
     stateful = getattr(net, "stateful", False)
     two_part = cfg.get("rain_head") == "two_part"
@@ -46,7 +50,7 @@ def rollout(net, hist: torch.Tensor, clim_targets: torch.Tensor, sincos_targets:
     if cfg.get("edge_relax"):
         relax = torch.as_tensor(edge_relax_map(cfg["edge_relax"]), dtype=hist.dtype, device=hist.device)
     h = None
-    outs, logits = [], []
+    outs, logits, amounts = [], [], []
     for k in range(steps):
         x = make_input(hist, clim_targets[:, k], sincos_targets[:, k], fixed)
         if stateful:
@@ -56,12 +60,16 @@ def rollout(net, hist: torch.Tensor, clim_targets: torch.Tensor, sincos_targets:
         z = torch.clamp(hist[:, -1] + out[:, :6], -Z_CLAMP, Z_CLAMP)
         if two_part:
             logits.append(out[:, 6])
-            z = _gate_rain(z, out[:, 6], clim_targets[:, k], cfg["rain_ref"], mode)
+            z, amount = _gate_rain(z, out[:, 6], clim_targets[:, k], cfg["rain_ref"], mode)
+            amounts.append(amount)
         if relax is not None:
             z = z * relax
         outs.append(z)
         hist = torch.cat([hist[:, 1:], z[:, None]], dim=1)
     z_all = torch.stack(outs, dim=1)
     if return_logits:
-        return z_all, (torch.stack(logits, dim=1) if logits else None)
+        lg = torch.stack(logits, dim=1) if logits else None
+        if return_amount:
+            return z_all, lg, (torch.stack(amounts, dim=1) if amounts else None)
+        return z_all, lg
     return z_all

@@ -202,7 +202,23 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - `V2-E4` AMSE loss: replace MSE + FFT-amplitude with adjusted MSE on a 2-D DCT of each anomaly map (amplitude term +
   coherence term weighted by the larger spectrum). Target: day-8 variance ratios nearer 1 and uncapped ss.
 - `V2-E5` Rain likelihood: train the rain amount with a Bernoulli-gamma (or Tweedie) likelihood instead of squared error
-  (keep the gate). Target: csi_skill and rain RMSE.
+  (keep the gate). Target: csi_skill and rain RMSE. Concretely (option `--rain-loss gamma`, default `mse` = baseline;
+  needs `--rain-head two_part`): the `RAIN-3` gate (hard, straight-through, BCE 0.5 on rain > 1 mm) is the Bernoulli
+  part and is unchanged. The ungated amount `a` (sqrt space, `REP-4` unchanged) gives the mean rain
+  `mu = max(a^2, 0.1)` mm/day. On the rain channel the latitude-weighted squared error (with its `RAIN-2` 3x heavy
+  weight, which belongs to the squared error) is replaced by the gamma negative log-likelihood of the true rain `y`
+  (mm/day) with mean `mu` and ONE learned global shape `k` (log-parameterised, init 1, clamped to [0.1, 50], no weight
+  decay, 10x the learning rate), on wet cells (y > 1 mm) only; dry cells add 0 (the BCE covers them). It is averaged
+  over all cells like the squared error and takes rain's slot in the channel-weighted mean (weight
+  `--rain-nll-weight`, default 1). The other 5 channels' losses, `SHP-1` spread and `SHP-2` spectral terms (all 6 channels, gated rain) and the validation loss
+  used to pick the best epoch (plain MSE, inference mode) are unchanged. Served forecast = the gamma MEAN `a^2` where
+  the gate is open (the same decode as `RAIN-3`, deterministic, no new output channel); `k` is stored in the
+  checkpoint (`rollout.rain_amount`) for information only. Fallback `--rain-loss tweedie` (power 1.5, unit deviance
+  `4 (y / sqrt(mu) + sqrt(mu) - 2 sqrt(y))`, same wet-cell mask) if gamma is unstable. Rain RMSE = mm/day at leads
+  1/4/8 on the evaluate random windows.
+  **Result (v2_e5, 1 seed): LOSES.** csi_skill val events/random 0.050/0.078 (baseline 0.098/0.105), rain RMSE
+  +1-2%; auto means val 65.55 / test 67.29 (-2.37 / -0.67); shocks 14.25 / 14.62 (up). Gamma weights a cell's error by
+  about 1/mu relative to the sqrt-space squared error, so heavy rain counts less (`docs/v2/RESULTS_E5.md`).
 - `V2-E6` Learned edges: zero padding in anomaly space instead of replicate, edge-distance input kept, random crops
   inside the 32 x 36 grid during training (fully convolutional). Target: edge-band RMSE and monsoon_stall propagation.
 - `V2-E7` One advect-and-correct model: learned velocity (capped <= 3 cells/day), semi-Lagrangian advection of learned
@@ -214,6 +230,12 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 ## Change log
 
 - v2 branch (2026-11-26): section 14 defines v2 experiments E2-E8, the protocol, win rule and resource rule.
+
+- v2/e5 (2026-11-26): spec gap fixed in `V2-E5`: it did not say where the likelihood applies (wet cells only, gate
+  untouched), what happens to the `RAIN-2` heavy weight, how the shape is parameterised, which value is served, or how
+  rain RMSE is measured. Now concrete (gamma NLL, global learned shape, mean served, option `--rain-loss`).
+  Result recorded: E5 loses; spec error in the E5 hypothesis (a gamma/Tweedie likelihood down-weights heavy cells
+  versus the baseline's 3x weighted squared error, it does not keep the tail).
 
 - v2 branch (2026-11-26): spec error fixed in `CON-6`: it only banned 2023+ data, implying older outside data was
   allowed. The track provides one dataset; v2 experiments may only use it and features derived from it.

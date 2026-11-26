@@ -1,6 +1,8 @@
 """Any torch network family wrapped as a TwinModel.
 Checkpoint = {family, net_config, codec, state_dict} + optional "inputs" ({"latlon": bool}, spec EDG-2 F6) and
-"rollout" (edge relax / two-part rain head, spec EDG-2 F4 and RAIN-3). Old checkpoints without them still load."""
+"rollout" (edge relax / two-part rain head, spec EDG-2 F4 and RAIN-3). Old checkpoints without them still load.
+A likelihood-trained rain amount (spec V2-E5, "rollout.rain_amount") needs no extra output: the gated amount^2 IS
+the gamma mean, so it is served exactly like RAIN-3."""
 from __future__ import annotations
 
 import os

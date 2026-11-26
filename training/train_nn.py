@@ -5,6 +5,7 @@
     python -m training.train_nn --family unet --name u_ll --latlon              # + F6 (spec EDG-2)
     python -m training.train_nn --family unet --name u_d4 --rain-head two_part  # + D4 (spec RAIN-3)
     python -m training.train_nn --family unet --name u_sg --shock-loss 5        # + shock guard (spec SHP-8)
+    python -m training.train_nn --family cnn --name c_g --rain-head two_part --rain-loss gamma   # v2 E5 (V2-E5)
 
 Unroll curriculum "1:4,2:3,4:3,8:2" = 4 epochs with 1-step loss, then 3 epochs unrolling 2 steps, and so on.
 Saves artifacts/models/<name>.pt (state_dict + config only) and scores it with training.evaluate.
@@ -32,6 +33,8 @@ HEAVY_MM = 10.0     # RAIN-2 threshold (same as the judge's heavy-rain CSI)
 WET_MM = 1.0        # RAIN-3 "it rains" threshold for the two-part head
 SHOCK_BOX = 12      # SHP-8 random shock box size (cells)
 SHOCK_LIMIT = 4.0   # SHP-8 penalty starts above 4 std (judge fails above 5)
+MU_FLOOR = 0.1      # V2-E5 floor of the mean rain (mm/day) inside the likelihood
+LOGK_RANGE = (float(np.log(0.1)), float(np.log(50.0)))   # V2-E5 gamma shape k clamped to [0.1, 50]
 
 
 class Tensors:
@@ -50,12 +53,13 @@ class Tensors:
         self.fixed = torch.from_numpy(fixed_maps(load_static(), latlon)).to(device)
         self.heavy = torch.from_numpy(ds.data[:, TP] > HEAVY_MM).to(device)          # RAIN-2
         self.wet = torch.from_numpy(ds.data[:, TP] > WET_MM).to(device)              # RAIN-3
+        self.rain = torch.from_numpy(ds.data[:, TP].copy()).to(device)                # V2-E5 true rain, mm/day
 
     def batch(self, t: np.ndarray, k: int):
         t = torch.as_tensor(t, device=self.Z.device)
         hist = torch.stack([self.Z[t - 2], self.Z[t - 1], self.Z[t]], dim=1)
         fut = torch.stack([t + j for j in range(1, k + 1)], dim=1)
-        return hist, self.CF[fut], self.SC[fut], self.Z[fut], self.heavy[fut], self.wet[fut]
+        return hist, self.CF[fut], self.SC[fut], self.Z[fut], self.heavy[fut], self.wet[fut], self.rain[fut]
 
 
 def anomaly_std(rain_mode: str) -> list[float]:
@@ -66,14 +70,19 @@ def anomaly_std(rain_mode: str) -> list[float]:
     return [float(x) for x in z.std(axis=(0, 2, 3))]
 
 
-def loss_fn(pred, true, lat_w, ch_w, var_w: float = 0.0, spec_w: float = 0.0, heavy=None, heavy_w: float = 1.0):
+def loss_fn(pred, true, lat_w, ch_w, var_w: float = 0.0, spec_w: float = 0.0, heavy=None, heavy_w: float = 1.0,
+            rain_term=None):
     """pred/true [B,K,6,H,W] anomalies. Latitude-weighted squared error per channel, plus (spec v1):
-    RAIN-2 heavy-rain cells count heavy_w x on the rain channel; SHP-1 spread loss; SHP-2 spectral loss."""
+    RAIN-2 heavy-rain cells count heavy_w x on the rain channel; SHP-1 spread loss; SHP-2 spectral loss.
+    rain_term (V2-E5): a scalar that replaces the rain channel's (heavy-weighted) squared error."""
     se = (pred - true) ** 2 * lat_w
-    if heavy is not None and heavy_w != 1.0:
+    if heavy is not None and heavy_w != 1.0 and rain_term is None:
         se = se.clone()
         se[:, :, TP] = se[:, :, TP] * (1.0 + (heavy_w - 1.0) * heavy.to(se.dtype))
-    loss = (se.mean(dim=(0, 1, 3, 4)) * ch_w).sum() / ch_w.sum()
+    per_ch = se.mean(dim=(0, 1, 3, 4))
+    if rain_term is not None:
+        per_ch = torch.cat([per_ch[:TP], rain_term.reshape(1), per_ch[TP + 1:]])
+    loss = (per_ch * ch_w).sum() / ch_w.sum()
     if var_w > 0:                                                      # SHP-1: keep spatial spread (anti-blur)
         sp, st = pred.std(dim=(-2, -1)), true.std(dim=(-2, -1))
         loss = loss + var_w * ((sp - st).abs().mean(dim=(0, 1)) * ch_w).sum() / ch_w.sum()
@@ -82,6 +91,22 @@ def loss_fn(pred, true, lat_w, ch_w, var_w: float = 0.0, spec_w: float = 0.0, he
         d = (ap - at).abs().mean(dim=(0, 1, 3, 4)) / at.mean(dim=(0, 1, 3, 4)).clamp_min(1e-6)
         loss = loss + spec_w * (d * ch_w).sum() / ch_w.sum()
     return loss
+
+
+def rain_nll(amount, rain_mm, wet, lat_w, kind: str, log_k=None):
+    """V2-E5 likelihood of the rain amount. amount [B,K,H,W] = ungated sqrt(rain) from the net, rain_mm the true rain,
+    wet = true rain > 1 mm. Mean mu = max(amount^2, 0.1). gamma: NLL with global shape k = exp(log_k);
+    tweedie: power-1.5 unit deviance. Dry cells add 0 (the gate's BCE covers them); mean over all cells."""
+    mu = (amount ** 2).clamp_min(MU_FLOOR)
+    y = rain_mm.clamp_min(MU_FLOOR)                                    # dry cells are masked out below
+    if kind == "gamma":
+        lk = log_k.clamp(*LOGK_RANGE); k = lk.exp()
+        nll = torch.lgamma(k) - k * lk + k * torch.log(mu) - (k - 1) * torch.log(y) + k * y / mu
+    elif kind == "tweedie":
+        nll = 4.0 * (y / mu.sqrt() + mu.sqrt() - 2.0 * y.sqrt())
+    else:
+        raise ValueError(kind)
+    return (torch.where(wet, nll, torch.zeros_like(nll)) * lat_w).mean()
 
 
 class PhysScale:
@@ -155,6 +180,9 @@ def main(argv=None):
     ap.add_argument("--latlon", action="store_true", help="EDG-2 F6: lat/lon input maps (weight decay 1e-3)")
     ap.add_argument("--rain-head", default="none", choices=["none", "two_part"], help="RAIN-3 D4")
     ap.add_argument("--rain-bce", type=float, default=0.5, help="RAIN-3 weight of the rain/no-rain loss")
+    ap.add_argument("--rain-loss", default="mse", choices=["mse", "gamma", "tweedie"],
+                    help="V2-E5: rain amount loss on wet cells (mse = baseline squared error)")
+    ap.add_argument("--rain-nll-weight", type=float, default=1.0, help="V2-E5 scale of the rain likelihood term")
     ap.add_argument("--shock-loss", type=float, default=0.0, help="SHP-8 weight of the shock stability guard")
     ap.add_argument("--weight-decay", type=float, default=None, help="default 1e-4, or 1e-3 with --latlon")
     ap.add_argument("--channel-weights", default="1,1,1,1,1,1")
@@ -166,6 +194,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.rain_head == "two_part" and a.rain != "sqrt":
         raise SystemExit("--rain-head two_part needs --rain sqrt (spec RAIN-3)")
+    if a.rain_loss != "mse" and a.rain_head != "two_part":
+        raise SystemExit("--rain-loss gamma/tweedie needs --rain-head two_part (spec V2-E5)")
 
     torch.manual_seed(a.seed); np.random.seed(a.seed); torch.set_num_threads(a.threads)
     dev = torch.device(a.device)
@@ -183,16 +213,23 @@ def main(argv=None):
     net = build_net(a.family, n_inputs(a.latlon), 7 if a.rain_head == "two_part" else 6, **net_cfg).to(dev)
     n_par = sum(p.numel() for p in net.parameters())
     wd = a.weight_decay if a.weight_decay is not None else (1e-3 if a.latlon else 1e-4)
-    opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=wd)
+    groups = [{"params": list(net.parameters())}]
+    log_k = None
+    if a.rain_loss == "gamma":                                         # V2-E5: one learned global gamma shape
+        log_k = torch.zeros((), device=dev, requires_grad=True)
+        groups.append({"params": [log_k], "weight_decay": 0.0})               # own lr: 10x (scalar, no noise)
+    opt = torch.optim.AdamW(groups, lr=a.lr, weight_decay=wd)
     cur = parse_curriculum(a.curriculum)
     total_steps = sum(n_ep * -(-len(window_starts(T.ds, TRAIN_YEARS, u)) // a.batch) for u, n_ep in cur)
-    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=total_steps + 1, pct_start=0.05)
+    max_lr = [a.lr, 10 * a.lr][:len(groups)]
+    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=max_lr, total_steps=total_steps + 1, pct_start=0.05)
     lat_w = torch.tensor(np.cos(np.deg2rad(LAT)) / np.cos(np.deg2rad(LAT)).mean(), dtype=torch.float32, device=dev)[:, None]
     ch_w = torch.tensor([float(x) for x in a.channel_weights.split(",")], device=dev)
     ps = PhysScale(codec, dev) if a.shock_loss > 0 else None
     bce = torch.nn.BCEWithLogitsLoss()
     print(f"{a.family} {net_cfg} params={n_par:,} device={dev} rain={a.rain} curriculum={cur} "
-          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd}")
+          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} rain_loss={a.rain_loss} "
+          f"shock_loss={a.shock_loss} wd={wd}")
 
     best, out_path = float("inf"), ARTIFACTS / "models" / f"{a.name}.pt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -204,6 +241,9 @@ def main(argv=None):
         if st.get("args") and (st["args"]["curriculum"], st["args"]["batch"]) != (a.curriculum, a.batch):
             raise SystemExit(f"--resume needs the same --curriculum/--batch as the original run: {st['args']['curriculum']}")
         net.load_state_dict(st["net"]); opt.load_state_dict(st["opt"]); sched.load_state_dict(st["sched"])
+        if log_k is not None:
+            with torch.no_grad():
+                log_k.copy_(torch.as_tensor(st["rain_log_k"], device=dev))
         step_count, done_ep, best = st["step_count"], st["epoch"], st["best"]
         np.random.set_state(st["np_rng"]); torch.set_rng_state(st["torch_rng"])
         print(f"resumed {a.name} after epoch {done_ep} (best val {best:.4f})", flush=True)
@@ -217,9 +257,13 @@ def main(argv=None):
             t0 = time.time(); net.train(); tot = 0.0
             perm = np.random.permutation(tr_idx)
             for bi, i in enumerate(range(0, len(perm), a.batch)):
-                hist, cf, sc, true, heavy, wet = T.batch(perm[i:i + a.batch], unroll)
-                pred, logits = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="train", return_logits=True)
-                loss = loss_fn(pred, true, lat_w, ch_w, a.var_loss, a.spec_loss, heavy, a.heavy_weight)
+                hist, cf, sc, true, heavy, wet, rain_mm = T.batch(perm[i:i + a.batch], unroll)
+                pred, logits, amount = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="train",
+                                               return_logits=True, return_amount=True)
+                rain_term = None
+                if a.rain_loss != "mse":                                 # V2-E5: likelihood replaces rain MSE
+                    rain_term = a.rain_nll_weight * rain_nll(amount, rain_mm, wet, lat_w, a.rain_loss, log_k)
+                loss = loss_fn(pred, true, lat_w, ch_w, a.var_loss, a.spec_loss, heavy, a.heavy_weight, rain_term)
                 if logits is not None:                                   # RAIN-3: learn "will it rain?"
                     loss = loss + a.rain_bce * bce(logits, wet.to(logits.dtype))
                 if ps is not None and bi % 4 == 0:                       # SHP-8: every 4th batch
@@ -233,11 +277,15 @@ def main(argv=None):
             net.eval(); vl = 0.0
             with torch.no_grad():
                 for i in range(0, len(va_idx), 128):
-                    hist, cf, sc, true, _, _ = T.batch(va_idx[i:i + 128], unroll)
+                    hist, cf, sc, true, *_ = T.batch(va_idx[i:i + 128], unroll)
                     pv = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="infer")
                     vl += loss_fn(pv, true, lat_w, ch_w).item() * len(hist)          # plain MSE, inference mode
             vl /= len(va_idx)
-            print(f"ep {ep:3d} unroll {unroll}  train {tot / len(tr_idx):.4f}  val {vl:.4f}  {time.time() - t0:.0f}s", flush=True)
+            k_txt = f"  gamma_k {float(log_k.detach().clamp(*LOGK_RANGE).exp()):.3f}" if log_k is not None else ""
+            print(f"ep {ep:3d} unroll {unroll}  train {tot / len(tr_idx):.4f}  val {vl:.4f}{k_txt}  {time.time() - t0:.0f}s", flush=True)
+            if a.rain_loss != "mse":                                     # V2-E5: info only, serving ignores it
+                rcfg["rain_amount"] = {"loss": a.rain_loss, "shape": float(log_k.detach().clamp(*LOGK_RANGE).exp())
+                                       if log_k is not None else None}
             if unroll == cur[-1][0] and vl < best:
                 best = vl
                 torch.save({"family": a.family, "net_config": net_cfg, "codec": codec.to_dict(),
@@ -247,6 +295,7 @@ def main(argv=None):
             tmp = state_path.with_suffix(".tmp")                         # write then rename: a power cut never
             torch.save({"net": net.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(),   # leaves a broken file
                         "step_count": step_count, "epoch": ep, "best": best, "args": vars(a),
+                        "rain_log_k": float(log_k.detach()) if log_k is not None else None,
                         "np_rng": np.random.get_state(), "torch_rng": torch.get_rng_state()}, tmp)
             tmp.replace(state_path)
     print("saved", out_path, "best val", round(best, 4))
