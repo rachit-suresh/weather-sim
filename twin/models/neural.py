@@ -1,6 +1,7 @@
 """Any torch network family wrapped as a TwinModel.
 Checkpoint = {family, net_config, codec, state_dict} + optional "inputs" ({"latlon": bool}, spec EDG-2 F6) and
-"rollout" (edge relax / two-part rain head, spec EDG-2 F4 and RAIN-3). Old checkpoints without them still load."""
+"rollout" (edge relax / two-part rain head / flux-convergence input map, spec EDG-2 F4, RAIN-3, V2-E3).
+Old checkpoints without them still load."""
 from __future__ import annotations
 
 import os
@@ -33,7 +34,8 @@ class NeuralModel(TwinModel):
         latlon = bool(ck.get("inputs", {}).get("latlon", False))
         self.rcfg = ck.get("rollout", {}) or {}
         n_out = 7 if self.rcfg.get("rain_head") == "two_part" else 6
-        self.net = build_net(ck["family"], n_inputs(latlon), n_out, **ck["net_config"]).eval()
+        flux = bool(self.rcfg.get("flux_conv"))
+        self.net = build_net(ck["family"], n_inputs(latlon, flux), n_out, **ck["net_config"]).eval()
         self.net.load_state_dict(ck["state_dict"])
         self.fixed = torch.from_numpy(fixed_maps(load_static(), latlon))
 
@@ -44,7 +46,8 @@ class NeuralModel(TwinModel):
         hist = torch.from_numpy(self.codec.encode(init_states, [doy - 2, doy - 1, doy]))[None]
         clim_n = torch.from_numpy(clim_feature(out_doys))[None]
         sc = torch.from_numpy(np.stack([sincos(d) for d in out_doys]))[None]
-        z = rollout(self.net, hist, clim_n, sc, self.fixed, steps, self.rcfg, mode="infer")[0].numpy()
+        clim0 = torch.from_numpy(clim_feature([doy]))                    # last input day (flux_conv option)
+        z = rollout(self.net, hist, clim_n, sc, self.fixed, steps, self.rcfg, mode="infer", clim_init=clim0)[0].numpy()
         return self.codec.decode(z, out_doys)
 
     def warmup(self):

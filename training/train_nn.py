@@ -5,6 +5,7 @@
     python -m training.train_nn --family unet --name u_ll --latlon              # + F6 (spec EDG-2)
     python -m training.train_nn --family unet --name u_d4 --rain-head two_part  # + D4 (spec RAIN-3)
     python -m training.train_nn --family unet --name u_sg --shock-loss 5        # + shock guard (spec SHP-8)
+    python -m training.train_nn --family cnn --name v2_e3 --rain-head two_part --flux-conv --budget-loss 0.05  # V2-E3
 
 Unroll curriculum "1:4,2:3,4:3,8:2" = 4 epochs with 1-step loss, then 3 epochs unrolling 2 steps, and so on.
 Saves artifacts/models/<name>.pt (state_dict + config only) and scores it with training.evaluate.
@@ -21,10 +22,10 @@ import torch
 from twin.calendar import clim_index, sincos
 from twin.climatology import load_static
 from twin.codec import Codec, clim_feature
-from twin.config import ARTIFACTS, LAT, NLAT, NLON, T2M, TCWV, TP, load_stats
+from twin.config import ARTIFACTS, LAT, NLAT, NLON, T2M, TCWV, TP, U10, V10, load_stats
 from twin.nets import build_net
-from twin.nets.common import EDGE_RELAX_DEFAULT, fixed_maps, n_inputs
-from twin.nets.rollout import rollout
+from twin.nets.common import EDGE_RELAX_DEFAULT, fixed_maps, flux_convergence, n_inputs
+from twin.nets.rollout import decode_wind_water, rollout
 
 from .data import ROOT, TRAIN_YEARS, VAL_YEARS, load, window_starts
 
@@ -56,6 +57,41 @@ class Tensors:
         hist = torch.stack([self.Z[t - 2], self.Z[t - 1], self.Z[t]], dim=1)
         fut = torch.stack([t + j for j in range(1, k + 1)], dim=1)
         return hist, self.CF[fut], self.SC[fut], self.Z[fut], self.heavy[fut], self.wet[fut]
+
+    def clim_now(self, t: np.ndarray):
+        """Normalised climatology of the last input day t (V2-E3 decodes the current state with it)."""
+        return self.CF[torch.as_tensor(t, device=self.Z.device)]
+
+
+def flux_stats(codec: Codec, mean, std) -> tuple[dict, float]:
+    """Spec V2-E3, from the training years only: rollout option `flux_conv` (scale = std of C in mm/day) and
+    std_R of the true column-budget residual R = dq + rain - (C(start) + C(end)) / 2 (mm), for the budget penalty."""
+    ds = load(); idx = np.where(ds.mask(TRAIN_YEARS))[0]
+    with torch.no_grad():
+        x = torch.from_numpy(ds.data[idx][:, [U10, V10, TCWV, TP]])
+        c = torch.cat([flux_convergence(x[i:i + 512, 0], x[i:i + 512, 1], torch.relu(x[i:i + 512, 2]))
+                       for i in range(0, len(x), 512)])
+        ok = torch.from_numpy(np.diff(idx) == 1)                       # consecutive days inside the training years
+        r = (x[1:, 2] - x[:-1, 2]) + x[1:, 3] - 0.5 * (c[:-1] + c[1:])
+        std_r = float(r[ok].std())
+    ref = {"mean": [float(mean[ch]) for ch in (U10, V10, TCWV)], "std": [float(std[ch]) for ch in (U10, V10, TCWV)],
+           "anom_std": [float(codec.anom_std[ch]) for ch in (U10, V10, TCWV)], "scale": float(c.std())}
+    return ref, std_r
+
+
+def budget_penalty(pred, true, start, cf, cf0, ref: dict, ps: "PhysScale", std_r: float, lat_w):
+    """Spec V2-E3 soft column-budget penalty. pred/true [B,K,6,H,W] anomalies, start [B,6,H,W] = last input day,
+    cf [B,K,6,H,W] target-day climatology, cf0 [B,6,H,W] climatology of the last input day.
+    R_k = (tcwv_k - tcwv_{k-1}) + rain_k - (C_{k-1} + C_k) / 2 per step; penalty = mean(((R_pred - R_true) / std_R)^2)."""
+    u0, v0, q0 = decode_wind_water(start, cf0, ref)                          # [B,H,W], shared start state
+    c0 = flux_convergence(u0, v0, q0)
+
+    def residual(z):
+        u, v, q = decode_wind_water(z, cf, ref)                              # [B,K,H,W]
+        c = flux_convergence(u, v, q)
+        q_prev = torch.cat([q0[:, None], q[:, :-1]], dim=1); c_prev = torch.cat([c0[:, None], c[:, :-1]], dim=1)
+        return (q - q_prev) + ps.rain_mm(z[:, :, TP], cf[:, :, TP]) - 0.5 * (c_prev + c)
+    return ((((residual(pred) - residual(true)) / std_r) ** 2) * lat_w).mean()
 
 
 def anomaly_std(rain_mode: str) -> list[float]:
@@ -106,7 +142,7 @@ class PhysScale:
         return torch.cat([d[:, :, :TP], rain[:, :, None], d[:, :, TP + 1:]], dim=2)
 
 
-def shock_penalty(net, hist, cf, sc, fixed, unroll, rcfg, pred, ps: PhysScale):
+def shock_penalty(net, hist, cf, sc, fixed, unroll, rcfg, pred, ps: PhysScale, cf0=None):
     """SHP-8: warm-ocean-style shock (+3 K, +15% water vapour) in a random 12x12 box on the last input day;
     penalise any response above SHOCK_LIMIT judge-std (the judge fails a shock above 5)."""
     i0 = np.random.randint(0, NLAT - SHOCK_BOX + 1); j0 = np.random.randint(0, NLON - SHOCK_BOX + 1)
@@ -117,7 +153,7 @@ def shock_penalty(net, hist, cf, sc, fixed, unroll, rcfg, pred, ps: PhysScale):
     pert[:, T2M] = box * (3.0 / ps.anom[T2M])
     pert[:, TCWV] = box * (0.15 * tcwv_phys / ps.anom[TCWV])
     hs = torch.cat([hist[:, :2], (last + pert)[:, None]], dim=1)
-    shocked = rollout(net, hs, cf, sc, fixed, unroll, rcfg, mode="train")
+    shocked = rollout(net, hs, cf, sc, fixed, unroll, rcfg, mode="train", clim_init=cf0)
     return (torch.relu(ps.diff_std(shocked, pred, cf) - SHOCK_LIMIT) ** 2).mean()
 
 
@@ -157,6 +193,9 @@ def main(argv=None):
     ap.add_argument("--rain-bce", type=float, default=0.5, help="RAIN-3 weight of the rain/no-rain loss")
     ap.add_argument("--shock-loss", type=float, default=0.0, help="SHP-8 weight of the shock stability guard")
     ap.add_argument("--weight-decay", type=float, default=None, help="default 1e-4, or 1e-3 with --latlon")
+    # v2 experiment E3 (spec V2-E3): defaults off = baseline unchanged
+    ap.add_argument("--flux-conv", action="store_true", help="V2-E3: moisture-flux convergence input map per step")
+    ap.add_argument("--budget-loss", type=float, default=0.0, help="V2-E3 weight of the soft column-budget penalty")
     ap.add_argument("--channel-weights", default="1,1,1,1,1,1")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -166,6 +205,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.rain_head == "two_part" and a.rain != "sqrt":
         raise SystemExit("--rain-head two_part needs --rain sqrt (spec RAIN-3)")
+    if a.budget_loss > 0 and not a.flux_conv:
+        raise SystemExit("--budget-loss needs --flux-conv (spec V2-E3)")
 
     torch.manual_seed(a.seed); np.random.seed(a.seed); torch.set_num_threads(a.threads)
     dev = torch.device(a.device)
@@ -179,8 +220,12 @@ def main(argv=None):
     if a.rain_head == "two_part":
         rcfg["rain_head"] = "two_part"
         rcfg["rain_ref"] = {"mean": float(mean[TP]), "std": float(std[TP]), "anom_std": float(codec.anom_std[TP])}
+    std_r = None
+    if a.flux_conv:                                                    # spec V2-E3
+        rcfg["flux_conv"], std_r = flux_stats(codec, mean, std)
+        print(f"flux_conv: C std {rcfg['flux_conv']['scale']:.2f} mm/day, budget residual std {std_r:.2f} mm", flush=True)
     net_cfg = parse_net_config(a.net)
-    net = build_net(a.family, n_inputs(a.latlon), 7 if a.rain_head == "two_part" else 6, **net_cfg).to(dev)
+    net = build_net(a.family, n_inputs(a.latlon, a.flux_conv), 7 if a.rain_head == "two_part" else 6, **net_cfg).to(dev)
     n_par = sum(p.numel() for p in net.parameters())
     wd = a.weight_decay if a.weight_decay is not None else (1e-3 if a.latlon else 1e-4)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=wd)
@@ -189,10 +234,11 @@ def main(argv=None):
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=total_steps + 1, pct_start=0.05)
     lat_w = torch.tensor(np.cos(np.deg2rad(LAT)) / np.cos(np.deg2rad(LAT)).mean(), dtype=torch.float32, device=dev)[:, None]
     ch_w = torch.tensor([float(x) for x in a.channel_weights.split(",")], device=dev)
-    ps = PhysScale(codec, dev) if a.shock_loss > 0 else None
+    ps = PhysScale(codec, dev) if (a.shock_loss > 0 or a.budget_loss > 0) else None
     bce = torch.nn.BCEWithLogitsLoss()
     print(f"{a.family} {net_cfg} params={n_par:,} device={dev} rain={a.rain} curriculum={cur} "
-          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd}")
+          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd} "
+          f"flux_conv={a.flux_conv} budget_loss={a.budget_loss}")
 
     best, out_path = float("inf"), ARTIFACTS / "models" / f"{a.name}.pt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -218,12 +264,17 @@ def main(argv=None):
             perm = np.random.permutation(tr_idx)
             for bi, i in enumerate(range(0, len(perm), a.batch)):
                 hist, cf, sc, true, heavy, wet = T.batch(perm[i:i + a.batch], unroll)
-                pred, logits = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="train", return_logits=True)
+                cf0 = T.clim_now(perm[i:i + a.batch])
+                pred, logits = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="train", return_logits=True,
+                                       clim_init=cf0)
                 loss = loss_fn(pred, true, lat_w, ch_w, a.var_loss, a.spec_loss, heavy, a.heavy_weight)
                 if logits is not None:                                   # RAIN-3: learn "will it rain?"
                     loss = loss + a.rain_bce * bce(logits, wet.to(logits.dtype))
-                if ps is not None and bi % 4 == 0:                       # SHP-8: every 4th batch
-                    loss = loss + a.shock_loss * shock_penalty(net, hist, cf, sc, T.fixed, unroll, rcfg, pred, ps)
+                if a.shock_loss > 0 and bi % 4 == 0:                     # SHP-8: every 4th batch
+                    loss = loss + a.shock_loss * shock_penalty(net, hist, cf, sc, T.fixed, unroll, rcfg, pred, ps, cf0)
+                if a.budget_loss > 0:                                    # V2-E3: soft column budget
+                    loss = loss + a.budget_loss * budget_penalty(pred, true, hist[:, -1], cf, cf0, rcfg["flux_conv"],
+                                                                 ps, std_r, lat_w)
                 opt.zero_grad(); loss.backward()
                 torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
                 opt.step()
@@ -234,7 +285,8 @@ def main(argv=None):
             with torch.no_grad():
                 for i in range(0, len(va_idx), 128):
                     hist, cf, sc, true, _, _ = T.batch(va_idx[i:i + 128], unroll)
-                    pv = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="infer")
+                    pv = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="infer",
+                                 clim_init=T.clim_now(va_idx[i:i + 128]))
                     vl += loss_fn(pv, true, lat_w, ch_w).item() * len(hist)          # plain MSE, inference mode
             vl /= len(va_idx)
             print(f"ep {ep:3d} unroll {unroll}  train {tot / len(tr_idx):.4f}  val {vl:.4f}  {time.time() - t0:.0f}s", flush=True)

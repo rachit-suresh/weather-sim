@@ -199,6 +199,18 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - `V2-E3` Wind-to-rain: moisture-flux convergence -div(tcwv * V) from u10, v10, tcwv (1-cell centred differences) of
   the current state as extra input map(s) for every step, plus a small soft column-budget penalty. Target: rain
   response to the monsoon_stall shock and csi_skill; check reach (stencil widens it by 1 cell).
+  Concrete (v2-e3 refinement): option `--flux-conv`, training AND inference (`twin/nets/rollout.py`), stored in the
+  checkpoint as rollout option `flux_conv` {mean, std, anom_std of u10/v10/tcwv, scale}. Per step, the current state
+  (last day of the window) is decoded to m/s and kg/m2 with the climatology of ITS day (step 1: last input day; later
+  steps: the previous target day); tcwv clipped at >= 0. C = -(d(q u)/dx + d(q v)/dy) x 86400 in mm/day, centred
+  differences over 2 cells (dx = 111.2 km x cos(lat), dy = 111.2 km), replicate edges; the stencil is plus-shaped
+  (no diagonals), so reach grows by 1 cell along x or y (CNN day-1 rmax 9.9 -> ~10.6 cells, LOC-1 limit 11).
+  C / (training-set std of C), clamped to +-6, is appended as 1 input map (29 -> 30 inputs). Option
+  `--budget-loss w` (run: w = 0.05), training only: per step R = (tcwv_end - tcwv_start) + rain_end -
+  (C(start) + C(end)) / 2 in mm; penalty w x lat-weighted mean(((R_pred - R_true) / std_R)^2), std_R = training-set
+  std of R_true. Evaporation is in both R_pred and R_true, so it is not modelled. Run tag `v2_e3`.
+  **Result: does not win** (`docs/v2/RESULTS_E3.md`): val mean 67.96 (+0.04), test mean 67.43 (-0.53), shocks
+  13.50 / 13.12; wind-shock rain -1.84 mm but 83% negative (baseline -1.29, 92%); csi_skill lower on 5 of 6 sets.
 - `V2-E4` AMSE loss: replace MSE + FFT-amplitude with adjusted MSE on a 2-D DCT of each anomaly map (amplitude term +
   coherence term weighted by the larger spectrum). Target: day-8 variance ratios nearer 1 and uncapped ss.
 - `V2-E5` Rain likelihood: train the rain amount with a Bernoulli-gamma (or Tweedie) likelihood instead of squared error
@@ -212,6 +224,10 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   training with almost-fair CRPS, serve one fixed member. Target: sharpness and csi_skill; determinism must hold.
 
 ## Change log
+
+- v2-e3 (2026-11-26): `V2-E3` made concrete (spec was missing: units, which day's climatology decodes the state,
+  stencil shape and reach, normalisation, input count, checkpoint option, budget-penalty formula and weight).
+- v2-e3 (2026-11-27): `V2-E3` result recorded: does not win under `V2-WIN` (test mean -0.53).
 
 - v2 branch (2026-11-26): section 14 defines v2 experiments E2-E8, the protocol, win rule and resource rule.
 
