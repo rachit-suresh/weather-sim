@@ -227,6 +227,26 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - `V2-F2` Heavy-rain oversampling: training windows whose target days have a heavy-rain area (cells > 10 mm/day) in the
   top 10% of 2005-2017 days are drawn 4x as often. Target: csi_skill val+test, with the heavy-rain frequency bias kept
   inside 0.8-1.6 (lesson from E2/E2b: CSI bought by over-forecasting is not a gain).
+- `V2-F-S` Sampler shared by F1 and F2 (concrete form, branch `v2/f-sample`). Flags
+  `train_nn --oversample {none,cyclone,heavy_rain} --oversample-factor 4`; default `none` keeps the old path exactly
+  (one `np.random.permutation` of all window starts per epoch). Otherwise each epoch draws `len(window starts)` starts
+  WITH replacement from the global numpy RNG (seeded, saved in the checkpoint), probability proportional to the weight:
+  `factor` for a flagged window, 1 otherwise. Same steps per epoch and same OneCycle schedule. A window (last input day
+  t, unroll k) is flagged if ANY of its target days t+1..t+k is a flagged day. Day flags are computed once from
+  2005-2017 data only (`training/oversample.py`); validation windows and checkpoint choice are unchanged.
+  - Cyclone day (F1): msl anomaly = msl minus a 2005-2017 calendar-day climatology (the kit's `climatology()`,
+    15-day smoothing). Region = sea cells (land-sea mask < 0.5) south of 23N in the Bay of Bengal (80-98E) or the
+    Arabian Sea (<= 78E): 229 + 159 cells. A day is flagged if the region's minimum anomaly is below **-8 hPa**:
+    3.1% of 2005-2017 days (calibration: 1% = -11.0, 2% = -9.0, 3% = -8.1, 5% = -6.7 hPa). Flagged episodes include
+    Mala, Gonu, Sidr, Nargis, Aila, Laila, Giri, Jal, Thane, Nilam, Phailin, Hudhud, Roanu, Vardah, Mora, Ockhi and
+    deep monsoon depressions. Window share flagged: 6.9% at unroll 4, 11.4% at unroll 8.
+  - Heavy-rain day (F2): heavy area = number of grid cells (all 32 x 36) with rain > 10 mm/day. A day is flagged if
+    its heavy area >= the 90th percentile of 2005-2017 days (**309 cells**; 10.0% of days, all in May-Oct).
+    Window share flagged: 17.5% at unroll 4, 22.5% at unroll 8.
+  - Heavy-rain frequency bias (F2 guard): `training/heavy_bias.py`, the 60 `random_windows` of a split, bias =
+    predicted / true count of cells > 10 mm/day, pooled over windows, at lead days 1, 4 and 8. F2 passes the guard
+    only if all 6 values (val and test, d1/d4/d8) lie in 0.8-1.6. Raw CSI at > 10 mm/day is reported next to it.
+  - `--resume` also refuses a checkpoint whose `--oversample`/`--oversample-factor` differ (code risk from E2).
 - `V2-F3` Rain stability guard: the `SHP-8` shock guard applied to the rain channel only, as a hinge that is zero while
   the rain response stays below 3.5 judge-std and grows above it (judge limit 5; r3_cnn sits at 4.1-4.6, E7 overshot
   in rain). Target: warm_ocean "stable" worst-case std and shock points, without losing csi_skill.
@@ -239,6 +259,11 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   points because error points are capped, and it reduces day-8 variance (blur risk).
 
 ## Change log
+
+- v2 branch `v2/f-sample` (2026-11-27): spec error (missing detail) fixed in `V2-F1`/`V2-F2`: no flags, region,
+  threshold value, window rule, sampler or frequency-bias measurement were defined. New `V2-F-S` makes them concrete
+  (cyclone day = sea-cell msl anomaly < -8 hPa, heavy day = heavy area >= 309 cells, 4x weighted draws with
+  replacement, bias band on val+test d1/d4/d8). Written before the code.
 
 - v2 branch (2026-11-27): section 14b adds fine-tune round F (`V2-F-P`, `V2-F0`..`V2-F5`) after E2-E8 found no winner.
   `train_nn --warm-start` added on the research branch for it (name-and-shape tensor copy, ignored on resume).
