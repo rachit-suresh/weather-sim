@@ -4,8 +4,8 @@
    2 substeps per day, the same `advect` the network uses).
 2. The displacement cap: total displacement per day < 3 cells even for huge raw velocities.
 3. With zero velocity the net equals the v1 CNN with the same weights (warm start starts at r3_cnn exactly).
-4. Reach budget (spec V2-E7b): with random weights and large velocities, a 1-cell input change moves nothing beyond
-   reach_bound() (Euclidean cells); E7b's bound is <= 10.
+4. Reach budget (spec V2-E7b, V2-E7c): with random weights and large velocities, a 1-cell input change moves nothing
+   beyond reach_bound() (Euclidean cells); E7b's bound is <= 10, E7c's <= 13.
 """
 from __future__ import annotations
 
@@ -68,10 +68,14 @@ def test_zero_velocity_is_cnn():
 
 
 def test_reach_budget():
+    for block_k, budget in (([3, 1, 1], 10.0), ([3, 3, 1], 13.0)):          # E7b (V2-E7b), E7c (V2-E7c)
+        _check_reach({"max_disp": 2.5, "interp": "bilinear", "block_k": block_k}, budget)
+
+
+def _check_reach(cfg, budget):
     torch.manual_seed(1)
-    cfg = {"max_disp": 2.5, "interp": "bilinear", "block_k": [3, 1, 1]}
     net = build_net("advcnn", 29, 7, **cfg).eval()
-    assert net.reach_bound() <= 10.0
+    assert net.reach_bound() <= budget
     for f in net.flow:                                                # big random velocities (hit the cap)
         torch.nn.init.normal_(f[-1].weight, std=2.0); torch.nn.init.normal_(f[-1].bias, std=2.0)
     torch.nn.init.normal_(net.out.weight, std=0.1)

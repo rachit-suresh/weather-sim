@@ -226,10 +226,21 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   **Result: does not win** (`docs/v2/RESULTS_E7.md`): reach fixed (rmax day 1 6.8 / 7.0), Fani track best so far
   (308/104/528 km, landfall latitude 0.0), shocks up to 12.75 but still < 13.12, and heavy-rain CSI fell (val mean
   66.31, test mean 65.25).
+- `V2-E7c` E7 follow-up (fine-tune of `v2_e7`), ONE change: the locality design only, NO shock guard. Bilinear lookups,
+  cap 2.5 cells/day, as many 3x3 correction convs as the budget allows. Guarantee: theoretical bound (`V2-E7b` formula)
+  <= 13 cells AND measured reach rmax day 1 <= 10 on val and test (one cell under the judge's 11). Arithmetic:
+  sqrt 2 x half + 2.5 <= 13 -> half <= 7.42 -> 7 half-sides: input 3x3 conv 1 + two bilinear lookups 1 + 1 leave 4,
+  i.e. two 3x3 residual blocks (blocks 0 and 1, exactly as in `v2_e7`) and block 2 as a 1x1 reaction block (warm-started
+  by summing its 3x3 taps). Bound = sqrt 2 x 7 + 2.5 = 12.40 <= 13. Fine-tune: curriculum `4:2,8:2`, lr 3e-4, 6 threads.
+  **Result: does not win** (`docs/v2/RESULTS_E7.md`): reach guarantee met (bound 12.40, measured rmax 8.72 / 8.81),
+  Fani landfall latitude exact, val mean 67.30 (-0.62), test mean 66.28 (-1.68), shocks 12.38 < 13.12.
 - `V2-E8` Fixed-seed CRPS residual head: per-pixel noise from a fixed seed independent of the input, 2-4 members in
   training with almost-fair CRPS, serve one fixed member. Target: sharpness and csi_skill; determinism must hold.
 
 ## Change log
+
+- v2 E7c (2026-11-27): `V2-E7c` added. E7b's 1x1 reaction blocks plus the shock guard cost heavy-rain CSI and the
+  protocol needs one change at a time, so E7c changes only the locality design (bound <= 13, measured rmax <= 10).
 
 - v2 E7b (2026-11-27): spec error in `V2-E7`: "velocity capped <= 3 cells/day" was taken as the locality guarantee,
   but velocity-head stencils, bicubic support and correction blocks add to the day-1 reach (E7: theoretical 18.6

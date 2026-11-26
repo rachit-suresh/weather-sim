@@ -241,3 +241,81 @@ Two things changed at once, so the cause is confounded:
    prints 284,315 when the 3x3 -> 1x1 collapsed tensors are smaller in the new net (new net: 153,243 params).
 3. **Protocol note (spec):** `V2-E7b` changes two things (reach + guard) by design. It cannot say which change cost
    the CSI. A follow-up should change one thing.
+
+---
+
+# E7c: reach budget only (no shock guard), the last v2 follow-up
+
+Spec: `V2-E7c`. Model: `artifacts/models/v2_e7c.pt` (218,779 parameters). Log: `runs/logs/v2_e7c.log`.
+
+**One change from v2_e7, the locality design:** bilinear lookups, cap 2.5 cells/day, blocks 0-1 kept as 3x3
+residual blocks, block 2 a 1x1 reaction block. Guarantee: theoretical bound <= 13 and measured rmax day 1 <= 10.
+
+- Arithmetic: sqrt 2 x half + 2.5 <= 13 gives half <= 7.42, so 7 half-sides fit:
+  - input 3x3 conv: 1
+  - two bilinear lookups: 1 + 1
+  - blocks 0 and 1 (two 3x3 convs each): 2 + 2
+  - block 2 (1x1): 0
+- Bound = sqrt 2 x 7 + 2.5 = **12.40**. `test_reach_budget` now checks both E7b (<= 10) and E7c (<= 13); it passes.
+- No `--shock-loss`.
+- Warm start from v2_e7: all 31 tensors. Block 2's two conv weights were summed over their taps; everything else was
+  copied exactly.
+- `--curriculum 4:2,8:2 --lr 3e-4 --threads 6`: 16 minutes (epochs 156-335 s). The best last-stage val loss was
+  epoch 4 (0.8027).
+- Val and test were scored at the same time (separate processes, TWIN_THREADS=1 each); both leaderboard rows are present.
+
+## Results (all E7 variants)
+
+| | r3_cnn | v2_e7 | v2_e7b | v2_e7c |
+|---|---|---|---|---|
+| val auto events / random / named | 67.51 / 68.12 / 68.12 | 66.60 / 67.00 / 67.00 | 65.07 / 66.11 / 67.75 | 67.15 / 67.38 / 67.38 |
+| **val mean** | **67.92** | 66.87 | 66.31 | **67.30 (-0.62)** |
+| test auto events / random / named | 68.12 / 67.65 / 68.12 | 67.38 / 67.38 / 67.38 | 63.18 / 64.82 / 67.75 | 65.42 / 66.03 / 67.38 |
+| **test mean** | **67.96** | 67.38 | 65.25 | **66.28 (-1.68)** |
+| shocks val / test | 13.12 / 13.12 | 12.00 / 12.38 | 12.75 / 12.75 | 12.38 / 12.38 |
+| uncapped ss val events / random / named | .168 / .138 / .185 | .173 / .139 / .188 | .145 / .129 / .168 | .164 / .134 / .175 |
+| uncapped ss test | .167 / .118 / .194 | .171 / .125 / .204 | .147 / .110 / .186 | .157 / .115 / .192 |
+| csi_skill val | .098 / .105 / .140 | .110 / .106 / .155 | .083 / .089 / .123 | .112 / .109 / .144 |
+| csi_skill test | .108 / .105 / .162 | .106 / .109 / .159 | .070 / .097 / .142 | .087 / .105 / .155 |
+| judge CSI points val ev/rnd, test ev/rnd | 15/15, 15/15 | 15/15, 15/15 | 12.5/13.4, 10.4/14.5 | 15/15, 13.0/15 |
+| reach rmax day 1 val / test | 9.90 / 9.67 | 11.09 / 10.75 | 6.77 / 7.00 | **8.72 / 8.81** |
+| theoretical bound (Euclidean cells) | 9.9 | 18.6 | 9.57 | 12.40 |
+| warm_ocean stable, val / test (of 5) | 5 / 4 | 2 / 3 | 4 / 4 | 3 / 3 |
+| warm_ocean propagates, val / test | 5 / 5 | 5 / 3 | 4 / 5 | 4 / 4 |
+| monsoon_stall propagates, val / test | 0 / 1 | 1 / 2 | 1 / 0 | 2 / 1 |
+| **Fani error day 1 / 2 / 3 (km)** | 350 / 245 / 809 | 154 / 430 / 714 | 308 / 104 / 528 | 350 / **0** / 607 |
+| **Fani landfall-latitude error** | +2.0 | +1.0 | 0.0 | **0.0** |
+| Amphan day 2 / landfall lat (report only) | 786 km / -7.0 | 312 km / 0.0 | 152 km / +1.0 | 104 km / 0.0 |
+| wind-shock west-coast rain (share < 0) | -1.29 (92%) | -1.52 (83%) | -1.94 (92%) | -1.98 (92%) |
+| edge / interior day-4 RMSE | .441 / .503 | .445 / .506 | .451 / .514 | .452 / .512 |
+| ms per 10-day rollout, 2 threads, side by side | 37 | 75 | 51 | 60 |
+
+Guards for v2_e7c: null test exact (0.0), `tests/test_engine.py` contract passes, 60 ms (< 1 s), repo scan 15/15,
+reach 8.72 / 8.81 (<= 10, the V2-E7c guarantee holds). Warm_ocean maxima on val events: 4.48 / **7.26** / **5.35** /
+2.74 / 0.73 std. heavy_rain and heatwave still overshoot, in rain on day 2.
+
+## Verdict under V2-WIN: does NOT win
+
+- Target: the Fani track gain holds. Mean error over days 1-3 is 319 km (r3_cnn 468), the landfall-day centre is
+  exact (0 km, latitude error 0.0), and Amphan's landfall latitude is exact.
+- val mean -0.62 and test mean -1.68: **fail** (the tolerance is 0.2).
+- Shocks 12.38 < 13.12: **fail**.
+- All guards hold.
+
+**What E7c separates:**
+- **E7b's val CSI loss came from the shock guard plus the extra 1x1 block.** With only the locality change, val CSI is
+  back above r3_cnn (.112 / .109 / .144). On test, events CSI (.087) and the uncapped ss are still a little below
+  r3_cnn, so the tighter reach costs some skill on the test years.
+- **The shock guard helped stability.** Without it, warm_ocean "stable" falls back to 3/5, versus 4/5 in E7b.
+
+The warm_ocean rain overshoot is a property of the fine-tuned correction/output path, and no E7 variant fixed it
+without a guard. Across the three E7 runs the trade is consistent: structural transport fixes the cyclone track (Fani
+and Amphan landfall latitude exact) but loses 1-2 shock points to rain instability, and so it loses on the judge's
+capped totals. r3_cnn stays the submission model under V2-WIN. As agreed, this is the last v2 follow-up. If anyone
+revisits E7 later, the evidence points to a rain-only guard (the tp channel) on top of E7c's locality design.
+
+## Errors found in E7c
+
+- None new in code or spec. One process note: running two `training.evaluate` processes in parallel risks a lost
+  `runs/leaderboard.csv` row (each process does a read-modify-write). Both rows were checked and are present here.
+  **Code (latent):** the CSV append has no lock.
