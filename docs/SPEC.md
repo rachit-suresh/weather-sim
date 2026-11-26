@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.7 (2026-11-26). **Status:** active.
+**Version:** 1.8 (2026-11-26). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -154,6 +154,8 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - **Phase 2b, run 3b:** CNN, hybrid, ConvGRU, physics with run 2 recipe + `RAIN-3` + `EDG-2` F4 edge relax
   (tags `r3b_<family>`); U-Net's run 3b model is `p2_unet_d4edge`. Run 3 (D4 only) keeps running as the
   per-family comparison.
+- **Submission (decided):** `r3_cnn` (run 3 CNN, D4 rain head). Chosen on the untouched 2020-21 test years:
+  test mean 68.0 vs 66.5-67.0 for the other top models (`docs/RESULTS_RUN_3.md`). Ensembles and run 3b did not beat it there.
 - **Phase 2c:** ensembles of the best models (equal-weight average, and with `restore_variance`), and
   `SHP-6` CRPS ensemble (E3) on the best family.
 - **Phase 3:** `VAL-4` final retrain, `RUN-1` ONNX chain, brief.
@@ -177,5 +179,7 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.4 (2026-11-26): D4 + edge relax screening added; r3_unet reuses p2_unet_d4st (identical run).
 - 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
 - 1.6 (2026-11-26): D4 + edge relax wins the screening; run 3b adds it to the other 4 families.
+- 1.8 (2026-11-26): run 3 / 3b / ensembles / test-year check recorded; submission model `r3_cnn`; brief built by
+  `docs/brief/make_brief.py` into `BRIEF.pdf`.
 - 1.7 (2026-11-26): organiser checklist: `CON-7` plain-git weights, `CON-8` real active model + validator,
   `CON-9` brief PDF. Spec error fixed: `ARC-3` did not cover a model that fails to load (server would not start).
