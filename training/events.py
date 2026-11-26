@@ -57,6 +57,24 @@ def pick_events(ds: Dataset, years, lead_room: int = 10, offset: int = 2) -> dic
     return {k: v for k, v in events.items() if v is not None}
 
 
+# spec VAL-2: famous real events (event day as yyyymmdd); the last input day is 2 days earlier
+NAMED = {
+    "val": {"kerala_floods": 20180815, "cyclone_titli": 20181011, "cyclone_gaja": 20181116, "cyclone_fani": 20190503,
+            "cyclone_vayu": 20190612, "monsoon_onset_2019": 20190608, "north_india_heat": 20190602},
+    "test": {"cyclone_amphan": 20200520, "cyclone_nisarga": 20200603, "cyclone_tauktae": 20210517,
+             "cyclone_yaas": 20210526},
+}
+
+
+def named_windows(ds: Dataset, split: str, offset: int = 2) -> dict[str, int]:
+    out = {}
+    for name, ymd in NAMED[split].items():
+        hit = np.where(ds.ymd == ymd)[0]
+        if len(hit) and hit[0] - offset >= 2 and hit[0] - offset + 10 < len(ds.data):
+            out[name] = int(hit[0] - offset)
+    return out
+
+
 def random_windows(ds: Dataset, years, n: int = 60, lead_room: int = 10, seed: int = 0) -> list[int]:
     from .data import window_starts
     idx = window_starts(ds, years, lead_room)

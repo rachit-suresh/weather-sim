@@ -19,12 +19,14 @@ import torch
 from twin.calendar import clim_index, sincos
 from twin.climatology import load_static
 from twin.codec import Codec, clim_feature
-from twin.config import ARTIFACTS, LAT
+from twin.config import ARTIFACTS, LAT, TP
 from twin.nets import build_net
 from twin.nets.common import edge_distance, static_features
 from twin.nets.rollout import rollout
 
 from .data import ROOT, TRAIN_YEARS, VAL_YEARS, load, window_starts
+
+HEAVY_MM = 10.0     # RAIN-2 threshold (same as the judge's heavy-rain CSI)
 
 
 class Tensors:
@@ -41,12 +43,13 @@ class Tensors:
         self.CF = torch.from_numpy(table[ci]).to(device)
         self.SC = torch.from_numpy(np.stack([sincos(d) for d in doys])).to(device)
         self.fixed = torch.from_numpy(np.concatenate([static_features(load_static()), edge_distance()])).to(device)
+        self.heavy = torch.from_numpy(ds.data[:, TP] > HEAVY_MM).to(device)          # RAIN-2: true rain > 10 mm/day
 
     def batch(self, t: np.ndarray, k: int):
         t = torch.as_tensor(t, device=self.Z.device)
         hist = torch.stack([self.Z[t - 2], self.Z[t - 1], self.Z[t]], dim=1)
         fut = torch.stack([t + j for j in range(1, k + 1)], dim=1)
-        return hist, self.CF[fut], self.SC[fut], self.Z[fut]
+        return hist, self.CF[fut], self.SC[fut], self.Z[fut], self.heavy[fut]
 
 
 def anomaly_std(rain_mode: str) -> list[float]:
@@ -57,12 +60,21 @@ def anomaly_std(rain_mode: str) -> list[float]:
     return [float(x) for x in z.std(axis=(0, 2, 3))]
 
 
-def loss_fn(pred, true, lat_w, ch_w, var_w: float):
-    se = ((pred - true) ** 2 * lat_w).mean(dim=(0, 1, 3, 4))           # per channel
-    loss = (se * ch_w).sum() / ch_w.sum()
-    if var_w > 0:                                                      # keep spatial spread (anti-blur)
+def loss_fn(pred, true, lat_w, ch_w, var_w: float = 0.0, spec_w: float = 0.0, heavy=None, heavy_w: float = 1.0):
+    """pred/true [B,K,6,H,W] anomalies. Latitude-weighted squared error per channel, plus (spec v1):
+    RAIN-2 heavy-rain cells count heavy_w x on the rain channel; SHP-1 spread loss; SHP-2 spectral loss."""
+    se = (pred - true) ** 2 * lat_w
+    if heavy is not None and heavy_w != 1.0:
+        se = se.clone()
+        se[:, :, TP] = se[:, :, TP] * (1.0 + (heavy_w - 1.0) * heavy.to(se.dtype))
+    loss = (se.mean(dim=(0, 1, 3, 4)) * ch_w).sum() / ch_w.sum()
+    if var_w > 0:                                                      # SHP-1: keep spatial spread (anti-blur)
         sp, st = pred.std(dim=(-2, -1)), true.std(dim=(-2, -1))
         loss = loss + var_w * ((sp - st).abs().mean(dim=(0, 1)) * ch_w).sum() / ch_w.sum()
+    if spec_w > 0:                                                     # SHP-2: match detail at every scale
+        ap, at = torch.fft.rfft2(pred).abs(), torch.fft.rfft2(true).abs()
+        d = (ap - at).abs().mean(dim=(0, 1, 3, 4)) / at.mean(dim=(0, 1, 3, 4)).clamp_min(1e-6)
+        loss = loss + spec_w * (d * ch_w).sum() / ch_w.sum()
     return loss
 
 
@@ -87,11 +99,14 @@ def main(argv=None):
     ap.add_argument("--family", required=True)
     ap.add_argument("--name", required=True)
     ap.add_argument("--net", default="{}", help='network kwargs: JSON or k=v list, e.g. width=48,rounds=4')
-    ap.add_argument("--rain", default="none", choices=["none", "sqrt"])
-    ap.add_argument("--curriculum", default="1:6,2:4,4:4")
+    # defaults = spec v1 recipe (docs/SPEC.md); sweep 1 used: --rain none --var-loss 0 --spec-loss 0 --heavy-weight 1
+    ap.add_argument("--rain", default="sqrt", choices=["none", "sqrt"])                  # REP-4
+    ap.add_argument("--curriculum", default="1:4,2:3,4:3,8:2")                          # ROL-2
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--batch", type=int, default=32)
-    ap.add_argument("--var-loss", type=float, default=0.0)
+    ap.add_argument("--var-loss", type=float, default=0.1)                              # SHP-1
+    ap.add_argument("--spec-loss", type=float, default=0.05)                            # SHP-2
+    ap.add_argument("--heavy-weight", type=float, default=3.0)                          # RAIN-2
     ap.add_argument("--channel-weights", default="1,1,1,1,1,1")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -139,9 +154,9 @@ def main(argv=None):
             t0 = time.time(); net.train(); tot = 0.0
             perm = np.random.permutation(tr_idx)
             for i in range(0, len(perm), a.batch):
-                hist, cf, sc, true = T.batch(perm[i:i + a.batch], unroll)
+                hist, cf, sc, true, heavy = T.batch(perm[i:i + a.batch], unroll)
                 pred = rollout(net, hist, cf, sc, T.fixed, unroll)
-                loss = loss_fn(pred, true, lat_w, ch_w, a.var_loss)
+                loss = loss_fn(pred, true, lat_w, ch_w, a.var_loss, a.spec_loss, heavy, a.heavy_weight)
                 opt.zero_grad(); loss.backward()
                 torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
                 opt.step()
@@ -151,8 +166,8 @@ def main(argv=None):
             net.eval(); vl = 0.0
             with torch.no_grad():
                 for i in range(0, len(va_idx), 128):
-                    hist, cf, sc, true = T.batch(va_idx[i:i + 128], unroll)
-                    vl += loss_fn(rollout(net, hist, cf, sc, T.fixed, unroll), true, lat_w, ch_w, 0.0).item() * len(hist)
+                    hist, cf, sc, true, _ = T.batch(va_idx[i:i + 128], unroll)
+                    vl += loss_fn(rollout(net, hist, cf, sc, T.fixed, unroll), true, lat_w, ch_w).item() * len(hist)   # plain MSE
             vl /= len(va_idx)
             print(f"ep {ep:3d} unroll {unroll}  train {tot / len(tr_idx):.4f}  val {vl:.4f}  {time.time() - t0:.0f}s", flush=True)
             if unroll == cur[-1][0] and vl < best:

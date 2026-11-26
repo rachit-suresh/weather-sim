@@ -4,7 +4,7 @@
 #   bash scripts/sweep.sh [python] [parallel jobs] [threads per job]
 set -u
 PY=${1:-python}; JOBS=${2:-5}; THREADS=${3:-3}
-CUR="1:5,2:3,4:3"
+CUR="1:5,2:3,4:3 --rain none --var-loss 0 --spec-loss 0 --heavy-weight 1"   # sweep 1 recipe (pre-spec)
 cd "$(dirname "$0")/.."
 mkdir -p runs/logs
 jobs_list=(

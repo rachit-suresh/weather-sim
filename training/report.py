@@ -6,7 +6,7 @@ import csv
 
 from .data import ROOT
 
-COLS = [("auto_events_of_70", "auto /70 (events)"), ("auto_random_of_70", "auto /70 (random)"), ("gate", "gate"),
+COLS = [("auto_events_of_70", "auto /70 (events)"), ("auto_random_of_70", "auto /70 (random)"), ("auto_named_of_70", "auto /70 (named)"), ("gate", "gate"),
         ("ss_events", "error skill (events)"), ("csi_skill_events", "heavy-rain skill (events)"),
         ("blur_pts_events", "blur /10"), ("causal_pts", "shocks /15"), ("ms_per_rollout", "ms / rollout"),
         ("r95_day1", "reach r95 d1"), ("rmax_day1", "reach max d1"), ("r95_day4", "reach r95 d4"), ("rmax_day4", "reach max d4")]

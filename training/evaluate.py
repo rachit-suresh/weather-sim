@@ -28,7 +28,7 @@ from twin.config import load_stats
 from twin.engine import Engine
 
 from .data import ROOT, TEST_YEARS, VAL_YEARS, load
-from .events import pick_events, random_windows
+from .events import named_windows, pick_events, random_windows
 
 LEADS = [L - 1 for L in C.LEAD_DAYS]       # rollout indices for lead days 1, 4, 8
 STEPS = C.SCORE_STEPS
@@ -117,12 +117,16 @@ def evaluate(spec: dict, split: str = "val", tag: str = "", write: bool = True) 
     r = score_windows(engine, ds, rnd)
     s = score_shocks(engine, ds, list(ev.values()), std)
     spread = probe_spread(engine, ds, list(ev.values())[:3], std)
+    nm = named_windows(ds, split)                                   # spec VAL-2
+    n = score_windows(engine, ds, list(nm.values()))
     auto_events = e["rmse_pts"] + e["csi_pts"] + e["blur_pts"] + s["causal_pts"]
     auto_random = r["rmse_pts"] + r["csi_pts"] + r["blur_pts"] + s["causal_pts"]
+    auto_named = n["rmse_pts"] + n["csi_pts"] + n["blur_pts"] + s["causal_pts"]
     gate = bool(e["ss_persist_day4"] > 0 and any(c["warm_ocean"]["localized"] or c["monsoon_stall"]["localized"]
                                                 for c in s["checks"]))
     res = {"time": datetime.now().isoformat(timespec="seconds"), "tag": tag, "model": engine.name, "split": split,
-           "auto_events_of_70": round(auto_events, 2), "auto_random_of_70": round(auto_random, 2), "gate": gate,
+           "auto_events_of_70": round(auto_events, 2), "auto_random_of_70": round(auto_random, 2),
+           "auto_named_of_70": round(auto_named, 2), "gate": gate, "named": n, "named_windows": nm,
            "events": e, "random": r, "shocks": s, "spread": spread, "event_windows": {k: int(v) for k, v in ev.items()}}
     if write:
         _append(res)
@@ -139,7 +143,8 @@ def _append(res: dict):
            "gate": res["gate"], "ss_events": round(res["events"]["mean_ss"], 4), "ss_random": round(res["random"]["mean_ss"], 4),
            "csi_skill_events": round(res["events"]["mean_csi_skill"], 4), "csi_skill_random": round(res["random"]["mean_csi_skill"], 4),
            "blur_pts_events": round(res["events"]["blur_pts"], 2), "blur_pts_random": round(res["random"]["blur_pts"], 2),
-           "causal_pts": round(res["shocks"]["causal_pts"], 2), "ms_per_rollout": round(res["random"]["ms_per_rollout"], 1),
+           "causal_pts": round(res["shocks"]["causal_pts"], 2), "auto_named_of_70": res["auto_named_of_70"],
+           "ss_named": round(res["named"]["mean_ss"], 4), "csi_skill_named": round(res["named"]["mean_csi_skill"], 4), "ms_per_rollout": round(res["random"]["ms_per_rollout"], 1),
            **res["spread"]}
     f = runs / "leaderboard.csv"
     rows = list(csv.DictReader(f.open(newline=""))) if f.exists() else []
@@ -167,7 +172,8 @@ def main(argv=None):
     res = evaluate(spec, a.split, a.tag)
     e, r, s = res["events"], res["random"], res["shocks"]
     print(f"{res['model']} [{a.split}]  auto(events)={res['auto_events_of_70']}/70  auto(random)={res['auto_random_of_70']}/70  gate={res['gate']}")
-    for lab, x in (("events", e), ("random", r)):
+    print(f"  named real events: auto={res['auto_named_of_70']}/70  {list(res['named_windows'])}")
+    for lab, x in (("events", e), ("random", r), ("named", res["named"])):
         print(f"  {lab:6s} SS={x['mean_ss']:.3f} ({x['rmse_pts']:.1f}/30)  CSI-skill={x['mean_csi_skill']:.3f} ({x['csi_pts']:.1f}/15)"
               f"  blur={x['blur_pts']:.1f}/10 ratios={x['blur_ratio']}  {x['ms_per_rollout']:.0f} ms")
     print(f"  shocks causality={s['causal_pts']:.2f}/15  windows={res['event_windows']}")

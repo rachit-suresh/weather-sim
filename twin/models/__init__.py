@@ -5,6 +5,7 @@ Spec examples:
   {"model": "damped_anomaly"}
   {"model": "neural", "checkpoint": "models/cnn_base.pt"}
   {"model": "lgbm", "dir": "lgbm/lgbm_base"}
+  {"model": "post", "base": {...}, "file": "post/cnn_r2.npz"}            (+ optional "blend"/"rescale"/"rainmap": bool)
   {"model": "ensemble", "members": [{...}, {...}], "weights": [0.5, 0.5], "restore_variance": true}
 """
 from __future__ import annotations
@@ -34,6 +35,10 @@ def build_model(spec: dict) -> TwinModel:
     if kind == "lgbm":
         from .lgbm import LGBMModel
         return LGBMModel(spec["dir"])
+    if kind == "post":
+        from .post import PostProcessed
+        return PostProcessed(build_model(spec["base"]), spec["file"], spec.get("blend"), spec.get("rescale"),
+                             spec.get("rainmap"))
     if kind == "ensemble":
         from .ensemble import BlendEnsemble
         return BlendEnsemble([build_model(m) for m in spec["members"]], spec.get("weights"),
