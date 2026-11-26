@@ -178,7 +178,42 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 5 hidden windows: scores are noisy; prefer improvements visible on random AND event AND named windows.
 - Arabian Sea shock box touches the west edge.
 
+## 14. v2 experiments (branch `v2/research`; each experiment on its own branch `v2/eN-*`)
+
+- `V2-P` Protocol. Baseline = `r3_cnn` recipe (CNN, `RAIN-3` two-part rain, sqrt rain, 3x heavy weight, spread +
+  spectral losses, curriculum 1:4,2:3,4:3,8:2, train 2005-2017, data rule `CON-6`). Each experiment changes ONE thing
+  (E7 replaces the network). Score with `training.evaluate` on val (2018-19) AND test (2020-21) and with
+  `training.v2_checks`. Report judge points AND uncapped numbers (mean skill `ss_*`, heavy-rain skill `csi_skill_*`,
+  shocks, reach, ms). Baseline `r3_cnn`: val 67.51/68.12/68.12 (mean 67.92), test 68.12/67.65/68.12 (mean 67.96),
+  shocks 13.12, ss val events/random 0.168/0.138, csi skill val events/random 0.098/0.105; v2_checks: Fani error
+  350/245/809 km, landfall-lat error +2.0, wind-shock west-coast rain -1.29 mm (92% negative), edge 0.441 / interior
+  0.503 std, 86 ms.
+- `V2-WIN` An experiment wins if it improves its target metric beyond noise AND val and test auto means are not lower
+  than baseline by more than 0.2 AND shocks are not lower AND all guards hold: `tests/test_engine.py` passes, null
+  test exact, reach probe day-1 max <= 11 cells, 10-day rollout < 1 s on 2 threads, repo scan 15/15. Only winners get
+  extra seeds (3 total). Amphan numbers are reported but never used to choose (test year).
+- `V2-RES` Resources: 1 training thread per experiment and one training at a time per experiment while the v1.1
+  submission retrain is running; never touch `main`, `wt-main` or other experiments' folders.
+- `V2-E2` Soft-CSI loss: add w * (1 - soft CSI) at 10 mm/day on rain, soft indicator sigmoid((rain_mm - 10)/tau), plus
+  a frequency-bias guard (penalise |log(predicted heavy-cell count / true count)|). Target: csi_skill val+test.
+- `V2-E3` Wind-to-rain: moisture-flux convergence -div(tcwv * V) from u10, v10, tcwv (1-cell centred differences) of
+  the current state as extra input map(s) for every step, plus a small soft column-budget penalty. Target: rain
+  response to the monsoon_stall shock and csi_skill; check reach (stencil widens it by 1 cell).
+- `V2-E4` AMSE loss: replace MSE + FFT-amplitude with adjusted MSE on a 2-D DCT of each anomaly map (amplitude term +
+  coherence term weighted by the larger spectrum). Target: day-8 variance ratios nearer 1 and uncapped ss.
+- `V2-E5` Rain likelihood: train the rain amount with a Bernoulli-gamma (or Tweedie) likelihood instead of squared error
+  (keep the gate). Target: csi_skill and rain RMSE.
+- `V2-E6` Learned edges: zero padding in anomaly space instead of replicate, edge-distance input kept, random crops
+  inside the 32 x 36 grid during training (fully convolutional). Target: edge-band RMSE and monsoon_stall propagation.
+- `V2-E7` One advect-and-correct model: learned velocity (capped <= 3 cells/day), semi-Lagrangian advection of learned
+  feature channels in 2 substeps, local CNN correction inside each substep; warm-start from `r3_cnn` where shapes
+  allow. Target: Fani track error and shock propagation without losing the mean.
+- `V2-E8` Fixed-seed CRPS residual head: per-pixel noise from a fixed seed independent of the input, 2-4 members in
+  training with almost-fair CRPS, serve one fixed member. Target: sharpness and csi_skill; determinism must hold.
+
 ## Change log
+
+- v2 branch (2026-11-26): section 14 defines v2 experiments E2-E8, the protocol, win rule and resource rule.
 
 - v2 branch (2026-11-26): spec error fixed in `CON-6`: it only banned 2023+ data, implying older outside data was
   allowed. The track provides one dataset; v2 experiments may only use it and features derived from it.
