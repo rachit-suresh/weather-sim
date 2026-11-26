@@ -87,3 +87,7 @@ time,tag,model,split,auto_events_of_70,auto_random_of_70,gate,ss_events,ss_rando
 2026-11-26T22:25:59,r3b_physics+rainmap,physics:r3b_physics+blend+rescale+rainmap,val,52.33,47.36,True,0.0807,0.073,0.0827,0.0735,10.0,8.33,9.75,42.6,2.85,7.07,8.45,16.02,64.75,0.1213,0.1114
 2026-11-26T22:27:17,ens3_mean,"ensemble[unet:p2_unet_d4edge,hybrid:r3_hybrid,cnn:r3_cnn]",val,67.39,68.12,True,0.172,0.1457,0.0977,0.1041,9.6,10.0,13.12,200.1,0.8,11.18,4.35,20.97,68.12,0.1907,0.1506
 2026-11-26T22:27:45,ens3_restore,"ensemble[unet:p2_unet_d4edge,hybrid:r3_hybrid,cnn:r3_cnn]",val,67.8,68.12,True,0.1661,0.1413,0.101,0.1079,9.67,10.0,13.12,201.5,0.8,18.04,3.94,23.87,68.12,0.1879,0.148
+2026-11-26T22:30:53,r3b_convgru,convgru:r3b_convgru,val,68.12,67.47,True,0.1447,0.1225,0.0996,0.0931,9.68,10.0,13.5,48.2,3.52,7.07,6.84,18.15,67.86,0.1448,0.0957
+2026-11-26T22:31:22,r3b_convgru+blend,convgru:r3b_convgru+blend,val,66.53,66.2,True,0.1573,0.1342,0.0938,0.0872,9.34,10.0,13.12,51.6,3.52,7.07,6.77,18.15,68.12,0.1554,0.1005
+2026-11-26T22:31:28,r3b_convgru+rescale,convgru:r3b_convgru+blend+rescale,val,66.53,66.2,True,0.1573,0.1342,0.0938,0.0872,9.34,10.0,13.12,52.6,3.52,7.07,6.77,18.15,68.12,0.1554,0.1005
+2026-11-26T22:31:33,r3b_convgru+rainmap,convgru:r3b_convgru+blend+rescale+rainmap,val,64.63,53.97,True,0.115,0.0879,0.1086,0.0852,10.0,8.33,10.88,50.2,3.0,7.07,8.4,18.15,63.44,0.1221,0.0949
