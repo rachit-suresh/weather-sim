@@ -5,6 +5,7 @@
     python -m training.train_nn --family unet --name u_ll --latlon              # + F6 (spec EDG-2)
     python -m training.train_nn --family unet --name u_d4 --rain-head two_part  # + D4 (spec RAIN-3)
     python -m training.train_nn --family unet --name u_sg --shock-loss 5        # + shock guard (spec SHP-8)
+    python -m training.train_nn --family cnn --name c_csi --rain-head two_part --csi-loss 0.5 --bias-guard 0.1  # V2-E2
 
 Unroll curriculum "1:4,2:3,4:3,8:2" = 4 epochs with 1-step loss, then 3 epochs unrolling 2 steps, and so on.
 Saves artifacts/models/<name>.pt (state_dict + config only) and scores it with training.evaluate.
@@ -106,6 +107,21 @@ class PhysScale:
         return torch.cat([d[:, :, :TP], rain[:, :, None], d[:, :, TP + 1:]], dim=2)
 
 
+def soft_csi_loss(pred, true, cf, ps: PhysScale, w: float, tau: float, wb: float, eps: float = 1.0):
+    """V2-E2: w * (1 - soft CSI at HEAVY_MM) + wb * |log(soft predicted heavy count / soft true count)|.
+    pred/true [B,K,6,H,W] anomalies, cf target-day climatology features; rain decoded to mm/day (sqrt space)."""
+    sp = torch.sigmoid((ps.rain_mm(pred[:, :, TP], cf[:, :, TP]) - HEAVY_MM) / tau)
+    with torch.no_grad():
+        st = torch.sigmoid((ps.rain_mm(true[:, :, TP], cf[:, :, TP]) - HEAVY_MM) / tau)
+    hits = (sp * st).sum(); misses = ((1 - sp) * st).sum(); fa = (sp * (1 - st)).sum()
+    loss = pred.new_zeros(())
+    if w > 0:
+        loss = loss + w * (1 - hits / (hits + misses + fa + eps))
+    if wb > 0:
+        loss = loss + wb * torch.log((sp.sum() + eps) / (st.sum() + eps)).abs()
+    return loss
+
+
 def shock_penalty(net, hist, cf, sc, fixed, unroll, rcfg, pred, ps: PhysScale):
     """SHP-8: warm-ocean-style shock (+3 K, +15% water vapour) in a random 12x12 box on the last input day;
     penalise any response above SHOCK_LIMIT judge-std (the judge fails a shock above 5)."""
@@ -156,6 +172,9 @@ def main(argv=None):
     ap.add_argument("--rain-head", default="none", choices=["none", "two_part"], help="RAIN-3 D4")
     ap.add_argument("--rain-bce", type=float, default=0.5, help="RAIN-3 weight of the rain/no-rain loss")
     ap.add_argument("--shock-loss", type=float, default=0.0, help="SHP-8 weight of the shock stability guard")
+    ap.add_argument("--csi-loss", type=float, default=0.0, help="V2-E2 weight of (1 - soft CSI) at 10 mm/day")
+    ap.add_argument("--csi-tau", type=float, default=2.0, help="V2-E2 sigmoid width (mm/day) of the soft indicator")
+    ap.add_argument("--bias-guard", type=float, default=0.0, help="V2-E2 weight of |log(soft heavy count ratio)|")
     ap.add_argument("--weight-decay", type=float, default=None, help="default 1e-4, or 1e-3 with --latlon")
     ap.add_argument("--channel-weights", default="1,1,1,1,1,1")
     ap.add_argument("--seed", type=int, default=0)
@@ -189,10 +208,12 @@ def main(argv=None):
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=total_steps + 1, pct_start=0.05)
     lat_w = torch.tensor(np.cos(np.deg2rad(LAT)) / np.cos(np.deg2rad(LAT)).mean(), dtype=torch.float32, device=dev)[:, None]
     ch_w = torch.tensor([float(x) for x in a.channel_weights.split(",")], device=dev)
-    ps = PhysScale(codec, dev) if a.shock_loss > 0 else None
+    use_csi = a.csi_loss > 0 or a.bias_guard > 0
+    ps = PhysScale(codec, dev) if (a.shock_loss > 0 or use_csi) else None
     bce = torch.nn.BCEWithLogitsLoss()
     print(f"{a.family} {net_cfg} params={n_par:,} device={dev} rain={a.rain} curriculum={cur} "
-          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd}")
+          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd} "
+          f"csi_loss={a.csi_loss} csi_tau={a.csi_tau} bias_guard={a.bias_guard}")
 
     best, out_path = float("inf"), ARTIFACTS / "models" / f"{a.name}.pt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -222,7 +243,9 @@ def main(argv=None):
                 loss = loss_fn(pred, true, lat_w, ch_w, a.var_loss, a.spec_loss, heavy, a.heavy_weight)
                 if logits is not None:                                   # RAIN-3: learn "will it rain?"
                     loss = loss + a.rain_bce * bce(logits, wet.to(logits.dtype))
-                if ps is not None and bi % 4 == 0:                       # SHP-8: every 4th batch
+                if use_csi:                                              # V2-E2: soft CSI + bias guard
+                    loss = loss + soft_csi_loss(pred, true, cf, ps, a.csi_loss, a.csi_tau, a.bias_guard)
+                if a.shock_loss > 0 and bi % 4 == 0:                     # SHP-8: every 4th batch
                     loss = loss + a.shock_loss * shock_penalty(net, hist, cf, sc, T.fixed, unroll, rcfg, pred, ps)
                 opt.zero_grad(); loss.backward()
                 torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
