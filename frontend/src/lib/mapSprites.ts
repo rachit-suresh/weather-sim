@@ -1,5 +1,5 @@
 import {
-  CELLS, GRID, NC, NR, colOf, rowOf, idx, isIndia, type VarKey,
+  CELLS, GRID, NC, NR, colOf, rowOf, idx, type VarKey,
 } from "@/lib/grid";
 import { frame, diffFrame, type Timeline } from "@/lib/api";
 import {
@@ -85,6 +85,23 @@ export function stamp(ctx: CanvasRenderingContext2D, name: keyof typeof SPRITES,
 }
 
 /** Shared target field extraction for PixelGrid and GlobeView. */
+/* One symmetric colour scale per run and variable: the 98th percentile of |branched - prime| over
+   EVERY day and EVERY cell (ocean included, since both judge shocks start offshore). Keeping it fixed
+   across the 10 days makes decay and spreading visible instead of re-normalising each frame away. */
+const runScaleCache = new WeakMap<Timeline, Map<VarKey, number>>();
+export function runDiffScale(timeline: Timeline, variable: VarKey): number {
+  let perVar = runScaleCache.get(timeline);
+  if (!perVar) { perVar = new Map(); runScaleCache.set(timeline, perVar); }
+  const cached = perVar.get(variable);
+  if (cached !== undefined) return cached;
+  const b = timeline.branched[variable], p = timeline.prime[variable];
+  const d = new Float32Array(b.length);
+  for (let i = 0; i < b.length; i++) d[i] = b[i] - p[i];
+  const s = diffScale(d, DIFF_FLOOR, variable);
+  perVar.set(variable, s);
+  return s;
+}
+
 export function computeTargetField(
   timeline: Timeline | null,
   view: ViewMode,
@@ -100,9 +117,7 @@ export function computeTargetField(
   }
   if (view === "diff") {
     const d = diffFrame(timeline, variable, day);
-    const indiaMask = new Array<number>(CELLS);
-    for (let i = 0; i < CELLS; i++) indiaMask[i] = isIndia(rowOf(i), colOf(i)) ? 1 : 0;
-    return { values: d, scale: diffScale(d, DIFF_FLOOR, variable, indiaMask), kind: "diff" as const };
+    return { values: d, scale: runDiffScale(timeline, variable), kind: "diff" as const };
   }
   return { values: frame(timeline[view][variable], day), scale: 1, kind: "abs" as const };
 }

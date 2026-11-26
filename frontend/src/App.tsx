@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   PanelLeft, PanelRight, GitBranch, Eye, Shuffle, AlertTriangle, X,
-  Thermometer, CloudRain, Droplets, Wind, Gauge, Globe2, Map as MapIcon,
+  Thermometer, CloudRain, Droplets, Wind, Gauge, Globe2, Map as MapIcon, Columns2,
 } from "lucide-react";
 import { StatusIsland } from "@/components/kokonutui/status-island";
 import PixelGrid from "@/components/PixelGrid";
@@ -28,6 +28,7 @@ export default function App() {
   const [rightOpen, setRightOpen] = useState(false);
   const [errDismissed, setErrDismissed] = useState(false);
   const [globeMode, setGlobeMode] = useState(true);
+  const [compare, setCompare] = useState(false);      // Prime | Branched curtain (flat map only)
 
   useEffect(() => {
     if (m.error) setErrDismissed(false);
@@ -40,7 +41,13 @@ export default function App() {
 
   const showError = m.error && !errDismissed;
   const switchToFlat = useCallback(() => setGlobeMode(false), []);
-  const switchToGlobe = useCallback(() => setGlobeMode(true), []);
+  const switchToGlobe = useCallback(() => { setGlobeMode(true); setCompare(false); }, []);
+  const toggleCompare = useCallback(() => {
+    setCompare((on) => {
+      if (!on) setGlobeMode(false);                   // the curtain lives on the flat map
+      return !on;
+    });
+  }, []);
 
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden bg-void text-ink">
@@ -50,7 +57,7 @@ export default function App() {
         tasks={m.tasks}
         onDismiss={m.dismissTask}
         dismissAfter={4200}
-        className="absolute left-1/2 top-16 z-50 -translate-x-1/2"
+        className="absolute bottom-[172px] left-1/2 z-50 -translate-x-1/2"
       />
 
       <div className="relative z-10 flex min-h-0 flex-1">
@@ -115,15 +122,29 @@ export default function App() {
                   </button>
                 </div>
 
-                <PixelTabs
-                  value={m.view}
-                  onChange={(v) => m.setView(v as typeof m.view)}
-                  items={[
-                    { id: "prime", label: "PRIME", icon: Eye, accent: "#1d6fa3" },
-                    { id: "branched", label: "BRANCHED", icon: GitBranch, accent: "#c07a08" },
-                    { id: "diff", label: "DIFF Δ", icon: Shuffle, accent: "#c53d2e" },
-                  ]}
-                />
+                <div className={compare ? "pointer-events-none opacity-40" : ""} aria-disabled={compare}>
+                  <PixelTabs
+                    value={m.view}
+                    onChange={(v) => m.setView(v as typeof m.view)}
+                    items={[
+                      { id: "prime", label: "PRIME", icon: Eye, accent: "#1d6fa3" },
+                      { id: "branched", label: "BRANCHED", icon: GitBranch, accent: "#c07a08" },
+                      { id: "diff", label: "DIFF Δ", icon: Shuffle, accent: "#c53d2e" },
+                    ]}
+                  />
+                </div>
+                <button
+                  onClick={toggleCompare}
+                  disabled={!m.timeline}
+                  aria-pressed={compare}
+                  title="Drag a curtain across the map: Prime on the left, Branched on the right"
+                  className={`flex items-center gap-1 border border-grid-line px-1.5 py-1 font-pixel text-[8px] transition-colors disabled:opacity-40 ${
+                    compare ? "bg-branch text-white" : "bg-abyss/80 text-ink-dim hover:text-ink"
+                  }`}
+                >
+                  <Columns2 size={10} />
+                  <span>COMPARE</span>
+                </button>
               </div>
 
               <div className="pointer-events-auto flex gap-0.5 border border-grid-line bg-abyss/80 p-0.5">
@@ -184,6 +205,7 @@ export default function App() {
                     showScenery={m.showScenery}
                     running={m.running}
                     focusRegion={m.focusRegion}
+                    shockOutlines={m.shockOutlines}
                     onSwitchToFlatMap={switchToFlat}
                   />
                 </motion.div>
@@ -217,12 +239,14 @@ export default function App() {
                     showScenery={m.showScenery}
                     running={m.running}
                     focusRegion={m.focusRegion}
+                    shockOutlines={m.shockOutlines}
+                    compare={compare}
                   />
                 </motion.div>
               )}
             </AnimatePresence>
 
-            <MapLegend m={m} lensOut={lensOut} />
+            <MapLegend m={m} lensOut={lensOut} compare={compare && !globeMode} />
 
             {/* first-run guidance */}
             <AnimatePresence>
@@ -267,7 +291,7 @@ export default function App() {
         </main>
 
         {/* ── right rail: impact + inspector ── */}
-        <aside className="hidden w-[324px] shrink-0 border-l border-grid-line bg-abyss/70 backdrop-blur-md xl:block">
+        <aside className="hidden w-[276px] shrink-0 xl:w-[324px] border-l border-grid-line bg-abyss/70 backdrop-blur-md lg:block">
           <ImpactRail m={m} />
         </aside>
         <AnimatePresence>
@@ -275,13 +299,13 @@ export default function App() {
             <>
               <motion.div
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="absolute inset-0 z-40 bg-void/70 backdrop-blur-sm xl:hidden"
+                className="absolute inset-0 z-40 bg-void/70 backdrop-blur-sm lg:hidden"
                 onClick={() => setRightOpen(false)}
               />
               <motion.aside
                 initial={{ x: 340 }} animate={{ x: 0 }} exit={{ x: 340 }}
                 transition={{ type: "spring", stiffness: 420, damping: 38 }}
-                className="absolute inset-y-0 right-0 z-50 w-[324px] border-l border-grid-line bg-abyss/95 backdrop-blur-md xl:hidden"
+                className="absolute inset-y-0 right-0 z-50 w-[324px] border-l border-grid-line bg-abyss/95 backdrop-blur-md lg:hidden"
               >
                 <button
                   onClick={() => setRightOpen(false)}
@@ -312,7 +336,7 @@ export default function App() {
         </div>
       )}
       {!rightOpen && (
-        <div className="pointer-events-none absolute bottom-[284px] right-2 z-30 xl:hidden">
+        <div className="pointer-events-none absolute bottom-[284px] right-2 z-30 lg:hidden">
           <button
             onClick={() => { setRightOpen(true); setLeftOpen(false); }}
             className="pointer-events-auto grid size-9 place-items-center border border-branch/50 bg-abyss/90 text-branch backdrop-blur-md"

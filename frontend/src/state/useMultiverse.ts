@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   checkHealth, fetchMeta, runBaseline, runBranch, clearPrimeCache,
-  getSavedBackendUrl, saveBackendUrl, SimulateError,
+  getSavedBackendUrl, saveBackendUrl, SimulateError, specFootprint,
   type Timeline, type PerturbationSpec,
 } from "@/lib/api";
-import { CELLS, GRID, NC, NR, VAR_KEYS, latLonToCell, rowOf, colOf, idx, type VarKey } from "@/lib/grid";
+import { CELLS, GRID, NC, NR, VAR_KEYS, latLonToCell, rowOf, colOf, idx, displayUnit, type VarKey } from "@/lib/grid";
 import { loadDemoWindows, type DemoWindow } from "@/lib/windows";
 import type { LensId } from "@/lib/impact";
 import type { ViewMode, Ripple } from "@/components/PixelGrid";
@@ -15,6 +15,18 @@ export interface QueuedShock extends PerturbationSpec {
   label: string;
   /** JudgePreset id when this shock is one part of a multi-field judge preset. */
   group?: string;
+}
+
+/** Map overlay for one armed shock: the exact cells it perturbs and a short label like "T2M +3 K". */
+export interface ShockOutline {
+  key: string;
+  cells: Set<number>;
+  label: string;
+}
+
+export function shockPartLabel(field: VarKey, value: number, valueMode: "abs" | "pct"): string {
+  const unit = valueMode === "pct" ? "%" : field === "t2m" ? " K" : ` ${displayUnit(field)}`;
+  return `${field.toUpperCase()} ${value > 0 ? "+" : value < 0 ? "−" : "±"}${Math.abs(value)}${unit}`;
 }
 
 export interface PaintedShock {
@@ -156,7 +168,7 @@ export function useMultiverse() {
   const [ripples, setRipples] = useState<Ripple[]>([]);
   const [showWind, setShowWind] = useState(true);
   const [showCities, setShowCities] = useState(true);
-  const [showScenery, setShowScenery] = useState(true);
+  const [showScenery, setShowScenery] = useState(false);   // data first; scenery is an opt-in toggle
   const [focusRegion, setFocusRegion] = useState<string | null>(null);
 
   const [modelName, setModelName] = useState("—");
@@ -452,6 +464,8 @@ export function useMultiverse() {
       });
     }
     if (!specs.length) return;
+    // the painted shock is the newest intent; otherwise the first armed shock (t2m for warm Bay)
+    const shockedField: VarKey = painted && painted.mask.size ? painted.field : specs[0].field;
 
     abortRef.current?.abort();
     const ac = new AbortController();
@@ -500,6 +514,9 @@ export function useMultiverse() {
       setOnline(true);
       setTimeline(t);
       setDay(0);
+      // Show the field that was actually shocked, so the difference map is never blank because the
+      // viewer happened to be on a channel the shock does not touch (e.g. rain for a +3 K shock).
+      setVariable(shockedField);
       setView("diff");
       setPlaying(true);
       addRipple(er, ec, "shock");
@@ -566,6 +583,27 @@ export function useMultiverse() {
     return false;
   }, [timeline]);
 
+  /* ── derived: outline + label for every armed shock (judge presets merged into one box) ── */
+  const shockOutlines = useMemo<ShockOutline[]>(() => {
+    const groups = new Map<string, { cells: Set<number>; parts: string[] }>();
+    const add = (key: string, spec: Pick<PerturbationSpec, "field" | "value" | "valueMode" | "mask" | "center" | "radius_cells" | "falloff">) => {
+      const g = groups.get(key) ?? { cells: new Set<number>(), parts: [] };
+      for (const i of specFootprint(spec).keys()) g.cells.add(i);
+      g.parts.push(shockPartLabel(spec.field, spec.value, spec.valueMode));
+      groups.set(key, g);
+    };
+    for (const q of queue) add(q.group ?? `q${q.id}`, q);
+    if (painted && painted.mask.size) {
+      add("painted", {
+        field: painted.field, value: painted.value, valueMode: painted.valueMode,
+        mask: [...painted.mask.entries()].map(([i, w]) => [rowOf(i), colOf(i), w] as [number, number, number]),
+      });
+    }
+    return [...groups.entries()]
+      .filter(([, g]) => g.cells.size > 0)
+      .map(([key, g]) => ({ key, cells: g.cells, label: g.parts.join(" · ") }));
+  }, [queue, painted]);
+
   const missionStage: "paint" | "branch" | "explore" = diverged
     ? "explore"
     : perturbationCount > 0
@@ -584,7 +622,7 @@ export function useMultiverse() {
     queue, addPreset, removeShock, addJudgePreset, removeJudgePreset, perturbationCount,
     run, reset, selected, selectCell, ripples, addRipple,
     showWind, setShowWind, showCities, setShowCities, showScenery, setShowScenery, focusRegion, setFocusRegion,
-    modelName, online, diverged, missionStage,
+    modelName, online, diverged, missionStage, shockOutlines,
   };
 }
 

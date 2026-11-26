@@ -1,14 +1,14 @@
 import { useMemo } from "react";
 import {
-  ABS_RANGE, SEQUENTIAL, divergingColor, moistColor, HEAT_RAMP, ENERGY_RAMP,
-  diffScale, DIFF_FLOOR, rgbCss,
+  ABS_RANGE, SEQUENTIAL, divergingColor, moistColor, HEAT_RAMP, ENERGY_RAMP, rgbCss,
 } from "@/lib/colormaps";
-import { diffFrame } from "@/lib/api";
-import { CELLS, isIndia, rowOf, colOf, display, displayDelta, displayUnit } from "@/lib/grid";
+import { runDiffScale } from "@/lib/mapSprites";
+import { display, displayDelta, displayUnit } from "@/lib/grid";
 import { lensById, type LensOutput } from "@/lib/impact";
 import type { Multiverse } from "@/state/useMultiverse";
 
-export default function MapLegend({ m, lensOut }: { m: Multiverse; lensOut: LensOutput | null }) {
+export default function MapLegend({ m, lensOut, compare = false }: { m: Multiverse; lensOut: LensOutput | null; compare?: boolean }) {
+  const view = compare ? "branched" : m.view;           // the curtain shows absolute fields on both sides
   const t = m.timeline;
 
   const spec = useMemo(() => {
@@ -19,7 +19,7 @@ export default function MapLegend({ m, lensOut }: { m: Multiverse; lensOut: Lens
 
     if (m.lens && lensOut) {
       const def = lensById(m.lens);
-      if (m.view === "diff") {
+      if (view === "diff") {
         const s = lensOut.scale;
         const fn = m.lens === "flood" ? moistColor : m.lens === "energy" ? (x: number) => ENERGY_RAMP((x + 1) / 2) : divergingColor;
         return {
@@ -33,16 +33,13 @@ export default function MapLegend({ m, lensOut }: { m: Multiverse; lensOut: Lens
       return { gradient: sample(ENERGY_RAMP), labels: ["−6", "+2", "+10"], title: "WATER BALANCE mm/d" };
     }
 
-    if (m.view === "diff") {
-      const d = diffFrame(t, m.variable, m.day);
-      const mask = new Array<number>(CELLS);
-      for (let i = 0; i < CELLS; i++) mask[i] = isIndia(rowOf(i), colOf(i)) ? 1 : 0;
-      const s = displayDelta(m.variable, diffScale(d, DIFF_FLOOR, m.variable, mask));
-      const u = displayUnit(m.variable);
+    if (view === "diff") {
+      const s = displayDelta(m.variable, runDiffScale(t, m.variable));
+      const u = m.variable === "t2m" ? "K" : displayUnit(m.variable);
       return {
         gradient: sample((x) => divergingColor(x * 2 - 1)),
         labels: [-s, 0, s].map((v) => `${v > 0 ? "+" : ""}${v.toFixed(Math.abs(s) < 1 ? 2 : 1)}`),
-        title: `Δ ${m.variable.toUpperCase()} (${u})`,
+        title: `Δ ${m.variable.toUpperCase()} (${u}) · FIXED ${t.days}-DAY SCALE`,
       };
     }
 
@@ -54,7 +51,7 @@ export default function MapLegend({ m, lensOut }: { m: Multiverse; lensOut: Lens
       labels: [dLo, (dLo + dHi) / 2, dHi].map((v) => v.toFixed(Math.abs(dHi - dLo) < 20 ? 1 : 0)),
       title: `${m.variable.toUpperCase()} (${displayUnit(m.variable)})`,
     };
-  }, [t, m.lens, lensOut, m.view, m.variable, m.day]);
+  }, [t, m.lens, lensOut, view, m.variable, m.day]);
 
   if (!spec) return null;
 

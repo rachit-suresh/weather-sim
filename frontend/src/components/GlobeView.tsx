@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { animate, createTimer, stagger } from "animejs";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
-import confetti from "canvas-confetti";
 import {
   Plus, Minus, Compass, Shuffle, ChevronLeft, ChevronRight, Radio,
   RotateCw, Maximize2, Crosshair,
@@ -23,6 +22,7 @@ import {
 } from "@/lib/worldMask";
 import type { LensId, LensOutput } from "@/lib/impact";
 import type { ViewMode, Ripple } from "@/components/PixelGrid";
+import type { ShockOutline } from "@/state/useMultiverse";
 
 /* ════════════════════════════════════════════════════════════════════════════
    GlobeView — Cartoony Pixel-Art Radio-Garden Globe for India's 32×36 Rollout
@@ -52,6 +52,7 @@ interface Props {
   showScenery: boolean;
   running: boolean;
   focusRegion: string | null;
+  shockOutlines: ShockOutline[];
   onSwitchToFlatMap: () => void;
 }
 
@@ -138,11 +139,8 @@ export default function GlobeView(props: Props) {
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const celebrationRef = useRef<HTMLCanvasElement>(null);
-  const cannonRef = useRef<confetti.CreateTypes | null>(null);
   const bufCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const [celebrating, setCelebrating] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
   const [cursorPx, setCursorPx] = useState<{ x: number; y: number } | null>(null);
   const [tunedIdx, setTunedIdx] = useState<number>(INITIAL_TUNED_IDX); // index in GRID.cities
@@ -292,30 +290,6 @@ export default function GlobeView(props: Props) {
     const b = animate(scaleRef.current, { v: target.scale, duration: 420, ease: "outCubic" });
     return () => { a.pause(); b.pause(); };
   }, [target, reduceMotion]);
-
-  /* ── confetti celebration when new timeline branches ── */
-  useEffect(() => {
-    if (!celebrationRef.current) return;
-    const cannon = confetti.create(celebrationRef.current, { resize: true, disableForReducedMotion: true });
-    cannonRef.current = cannon;
-    return () => { cannon.reset(); cannonRef.current = null; };
-  }, []);
-
-  useEffect(() => {
-    if (!timeline || !props.showScenery || reduceMotion) return;
-    const diverged = timeline.branched.tp.some((v, i) => Math.abs(v - timeline.prime.tp[i]) > 1e-5)
-      || timeline.branched.t2m.some((v, i) => Math.abs(v - timeline.prime.t2m[i]) > 1e-5);
-    if (!diverged) return;
-    setCelebrating(true);
-    void cannonRef.current?.({
-      particleCount: 48, spread: 85, startVelocity: 24, gravity: 0.8, ticks: 95,
-      flat: true, shapes: ["square"],
-      colors: ["#efb52f", "#ce4d34", "#438238", "#529db5"],
-      origin: { x: 0.5, y: 0.65 },
-    });
-    const timeout = window.setTimeout(() => setCelebrating(false), 2000);
-    return () => { window.clearTimeout(timeout); setCelebrating(false); };
-  }, [timeline?.runId, props.showScenery, reduceMotion]);
 
   useEffect(() => {
     if (!timeline || reduceMotion) { sweepRef.current.v = 1; return; }
@@ -933,6 +907,53 @@ export default function GlobeView(props: Props) {
         ctx.globalAlpha = 1;
       }
 
+      // Armed shock outlines: dashed cell-edge boundary projected onto the sphere + label tag
+      for (const o of p.shockOutlines) {
+        const has = (r: number, c: number) => inBounds(r, c) && o.cells.has(r * NC + c);
+        const edge = (lat0: number, lon0: number, lat1: number, lon1: number) => {
+          const a = projectGeo(lat0, lon0, axes, R, cx, cy, 0.06);
+          const b = projectGeo(lat1, lon1, axes, R, cx, cy, 0.06);
+          if (!a.visible || !b.visible) return;
+          ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        };
+        ctx.save();
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 3]);
+        for (const [color, offset] of [["rgba(255,252,240,0.95)", 0], ["rgba(197,61,46,0.95)", 4]] as const) {
+          ctx.strokeStyle = color;
+          ctx.lineDashOffset = -tick * 0.25 - offset;
+          ctx.beginPath();
+          for (const i of o.cells) {
+            const r = rowOf(i), c = colOf(i);
+            const s = GRID.lat[r] - 0.5, n = GRID.lat[r] + 0.5, w = GRID.lon[c] - 0.5, e = GRID.lon[c] + 0.5;
+            if (!has(r + 1, c)) edge(n, w, n, e);
+            if (!has(r - 1, c)) edge(s, w, s, e);
+            if (!has(r, c - 1)) edge(s, w, n, w);
+            if (!has(r, c + 1)) edge(s, e, n, e);
+          }
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        let tr = -1, tc = NC;
+        for (const i of o.cells) {
+          const r = rowOf(i), c = colOf(i);
+          if (r > tr || (r === tr && c < tc)) { tr = r; tc = c; }
+        }
+        const anchor = projectGeo(GRID.lat[tr] + 0.5, GRID.lon[tc] - 0.5, axes, R, cx, cy, 0.06);
+        if (anchor.visible) {
+          ctx.font = "bold 10px 'JetBrains Mono', ui-monospace, monospace";
+          const tw = ctx.measureText(o.label).width + 8;
+          const ty = anchor.y - 16;
+          ctx.fillStyle = "rgba(197,61,46,0.95)";
+          ctx.fillRect(anchor.x, ty, tw, 14);
+          ctx.fillStyle = "#fffaf0";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(o.label, anchor.x + 4, ty + 7.5);
+        }
+        ctx.restore();
+      }
+
       // Expanding pixel sonar ripples & click burst on the curved globe
       for (const ring of ringRef.current) {
         drawPixelSonarRipple(
@@ -1436,21 +1457,6 @@ export default function GlobeView(props: Props) {
           paintMode ? "cursor-crosshair" : "cursor-grab active:cursor-grabbing"
         }`}
       />
-
-      <canvas ref={celebrationRef} aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 h-full w-full" />
-
-      <AnimatePresence>
-        {celebrating && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.8 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="pointer-events-none absolute left-1/2 top-14 z-30 -translate-x-1/2 border-2 border-inkline bg-panel px-5 py-3 font-pixel text-xs text-shock shadow-[4px_4px_0_#69442e]"
-          >
-            A NEW TIMELINE!
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ── right-edge globe navigation dock (zoom + center India + spin) ── */}
       <div className="pointer-events-auto absolute right-2 top-24 z-20 flex flex-col gap-1 sm:top-14">

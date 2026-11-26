@@ -12,9 +12,9 @@ import { RadarArea } from "@/components/bklit/charts/radar-area";
 import { SectionTitle, ToggleChip, StatRow, Flap } from "@/components/ui";
 import CellInspector from "@/components/CellInspector";
 import { computeLens, lensById, LENSES, type LensId } from "@/lib/impact";
-import { diffFrame } from "@/lib/api";
+import { diffFrame, cellSeries } from "@/lib/api";
 import { GRID, INDIA_CELLS, rowOf, colOf, regionOf, nearestCity, displayDelta, displayUnit } from "@/lib/grid";
-import { DIFF_FLOOR, diffScale } from "@/lib/colormaps";
+import { runDiffScale } from "@/lib/mapSprites";
 import type { Multiverse } from "@/state/useMultiverse";
 
 const LENS_ICONS = { flood: CloudRain, heat: Flame, energy: Wheat } as const;
@@ -63,7 +63,7 @@ export default function ImpactRail({ m }: { m: Multiverse }) {
       if (a > eps) changed++;
       if (a > max) { max = a; maxI = i; }
     }
-    const rawScale = diffScale(d, DIFF_FLOOR, m.variable, GRID.mask.flat().map((cell) => cell === 2 ? 1 : 0));
+    const rawScale = runDiffScale(t, m.variable);              // same fixed scale the map uses
     const top = INDIA_CELLS
       .map((i) => ({ i, delta: displayDelta(m.variable, d[i]) }))
       .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
@@ -77,6 +77,40 @@ export default function ImpactRail({ m }: { m: Multiverse }) {
       top,
     };
   }, [t, lens, m.variable, m.day]);
+
+  /* Top affected places: for every reference city, the largest |branched − prime| of the current field
+     over the whole run, the day it happens, and a plain-language verdict (threshold crossings first). */
+  const places = useMemo(() => {
+    if (!t) return [];
+    const v = m.variable;
+    const unit = v === "t2m" ? "K" : displayUnit(v);
+    const thresh = v === "t2m"
+      ? { raw: 313.15, label: "40 °C heat" }
+      : v === "tp" ? { raw: 64.5, label: "IMD heavy rain (64.5 mm/day)" } : null;
+    const rows = GRID.cities.map((city) => {
+      const pr = cellSeries(t.prime[v], city.i, t.days);
+      const br = cellSeries(t.branched[v], city.i, t.days);
+      let peak = 0, peakDay = 0;
+      for (let d = 0; d < t.days; d++) {
+        const dd = displayDelta(v, br[d] - pr[d]);
+        if (Math.abs(dd) > Math.abs(peak)) { peak = dd; peakDay = d; }
+      }
+      const last = displayDelta(v, br[t.days - 1] - pr[t.days - 1]);
+      let verdict = `peaks ${peak > 0 ? "+" : ""}${peak.toFixed(2)} ${unit} on Day +${peakDay + 1}, ` +
+        `${last > 0 ? "+" : ""}${last.toFixed(2)} ${unit} left by Day +${t.days}`;
+      if (thresh) {
+        const up = br.findIndex((x, d) => x >= thresh.raw && pr[d] < thresh.raw);
+        const down = br.findIndex((x, d) => x < thresh.raw && pr[d] >= thresh.raw);
+        if (up >= 0) verdict = `crosses ${thresh.label} on Day +${up + 1} (Prime stays below)`;
+        else if (down >= 0) verdict = `drops out of ${thresh.label} on Day +${down + 1}`;
+      }
+      return { i: city.i, name: city.name, peak, unit, verdict };
+    });
+    return rows
+      .filter((r) => Math.abs(r.peak) > 1e-3)
+      .sort((a, b) => Math.abs(b.peak) - Math.abs(a.peak))
+      .slice(0, 5);
+  }, [t, m.variable]);
 
   const def = lens ? lensById(lens) : null;
 
@@ -252,6 +286,43 @@ export default function ImpactRail({ m }: { m: Multiverse }) {
                     {c.delta > 0 ? "+" : ""}{c.delta.toFixed(2)} {def.unit}
                   </span>
                 </motion.button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── top affected places over the whole run ── */}
+      {t && (
+        <div className="px-3 pt-3">
+          <div className="border border-branch/40 bg-abyss/70 px-2.5 py-2">
+            <div className="flex items-center justify-between font-pixel text-[8px] text-ink-faint">
+              <span>TOP AFFECTED PLACES · {m.variable.toUpperCase()}</span>
+              <span>DAY +1…+{t.days}</span>
+            </div>
+            <div className="mt-1.5 space-y-1">
+              {places.length === 0 ? (
+                <p className="text-[9px] text-ink-faint">
+                  {m.diverged
+                    ? `No city's ${m.variable.toUpperCase()} changed. Try another field or a bigger shock.`
+                    : "Branch == Prime: no place changed (arm a shock and branch)."}
+                </p>
+              ) : places.map((p, k) => (
+                <button
+                  key={p.name}
+                  onClick={() => { m.selectCell(p.i); m.setView("diff"); }}
+                  className={`block w-full border px-2 py-1 text-left transition-colors ${
+                    m.selected === p.i ? "border-branch/60 bg-branch/10" : "border-grid-line bg-abyss/50 hover:border-branch/40"
+                  }`}
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate font-mono text-[10px] text-ink">{k + 1}. {p.name}</span>
+                    <span className={`shrink-0 font-mono text-[10px] tabular-nums ${p.peak > 0 ? "text-branch" : "text-prime"}`}>
+                      {p.peak > 0 ? "+" : ""}{p.peak.toFixed(2)} {p.unit}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-[9px] leading-snug text-ink-dim">{p.verdict}</div>
+                </button>
               ))}
             </div>
           </div>

@@ -170,6 +170,40 @@ export async function fetchMeta(baseUrl: string, signal?: AbortSignal): Promise<
 }
 
 /**
+ * Cells a spec touches, with weights 0..1 (flat index -> weight). Used both to build the request
+ * tensor and to outline armed shocks on the map, so the outline is exactly what gets sent.
+ */
+export function specFootprint(spec: Pick<PerturbationSpec, "mask" | "center" | "radius_cells" | "falloff">): Map<number, number> {
+  const out = new Map<number, number>();
+  const put = (r: number, c: number, w: number) => {
+    if (r < 0 || r >= NR || c < 0 || c >= NC) return;
+    const weight = Math.max(0, Math.min(1, w));
+    if (weight <= 0) return;
+    const i = r * NC + c;
+    out.set(i, Math.max(out.get(i) ?? 0, weight));
+  };
+  if (spec.mask && spec.mask.length) {
+    for (const [r, c, w] of spec.mask) put(r, c, w);
+  } else if (spec.center) {
+    const [cr, cc] = spec.center;
+    const rad = Math.max(0.4, spec.radius_cells ?? 2.5);
+    const falloff = spec.falloff ?? "gaussian";
+    const R = Math.ceil(rad * 2.5);
+    for (let r = Math.max(0, Math.floor(cr - R)); r <= Math.min(NR - 1, Math.ceil(cr + R)); r++) {
+      for (let c = Math.max(0, Math.floor(cc - R)); c <= Math.min(NC - 1, Math.ceil(cc + R)); c++) {
+        const d = Math.hypot(r - cr, c - cc);
+        let w = 0;
+        if (falloff === "hard") w = d <= rad ? 1 : 0;
+        else if (falloff === "linear") w = Math.max(0, Math.min(1, 1 - d / rad));
+        else w = Math.exp(-0.5 * (d / (rad / 1.6)) ** 2);
+        if (w > 0.004) put(r, c, w);
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * Converts UI PerturbationSpecs into a single [6][32][36] physical-unit delta tensor.
  * Percentage shocks use `init_states[2]` (latest historical input day).
  */
@@ -200,24 +234,7 @@ export function buildPerturbationTensor(
       }
     };
 
-    if (spec.mask && spec.mask.length) {
-      for (const [r, c, w] of spec.mask) applyCell(r, c, w);
-    } else if (spec.center) {
-      const [cr, cc] = spec.center;
-      const rad = Math.max(0.4, spec.radius_cells ?? 2.5);
-      const falloff = spec.falloff ?? "gaussian";
-      const R = Math.ceil(rad * 2.5);
-      for (let r = Math.max(0, Math.floor(cr - R)); r <= Math.min(NR - 1, Math.ceil(cr + R)); r++) {
-        for (let c = Math.max(0, Math.floor(cc - R)); c <= Math.min(NC - 1, Math.ceil(cc + R)); c++) {
-          const d = Math.hypot(r - cr, c - cc);
-          let w = 0;
-          if (falloff === "hard") w = d <= rad ? 1 : 0;
-          else if (falloff === "linear") w = Math.max(0, Math.min(1, 1 - d / rad));
-          else w = Math.exp(-0.5 * (d / (rad / 1.6)) ** 2);
-          if (w > 0.004) applyCell(r, c, w);
-        }
-      }
-    }
+    for (const [i, w] of specFootprint(spec)) applyCell(Math.floor(i / NC), i % NC, w);
   }
 
   // Armed shocks always send a real [6][32][36] tensor, even when it is all zeros: that is how the

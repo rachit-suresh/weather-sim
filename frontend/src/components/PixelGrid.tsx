@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { animate, createTimer, stagger } from "animejs";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
-import confetti from "canvas-confetti";
 import {
   CELLS, GRID, NC, NR, colOf, rowOf, idx,
   fmtLat, fmtLon, regionOf, nearestCity, display, displayDelta, displayUnit,
@@ -14,8 +13,55 @@ import {
   colorForFieldValue, brushCellsAround, drawPixelSun, drawCompassRose, drawPixelSonarRipple,
 } from "@/lib/mapSprites";
 import type { LensId, LensOutput } from "@/lib/impact";
+import type { ShockOutline } from "@/state/useMultiverse";
 
 export type ViewMode = "prime" | "branched" | "diff";
+
+/** Dashed outline around a set of cells + a small label tag. Works for any cell shape. */
+export function drawShockOutline(
+  ctx: CanvasRenderingContext2D,
+  o: ShockOutline,
+  cellRect: (r: number, c: number) => { x: number; y: number; s: number },
+  dashOffset: number,
+) {
+  const has = (r: number, c: number) => r >= 0 && c >= 0 && r < NR && c < NC && o.cells.has(r * NC + c);
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 3]);
+  ctx.lineDashOffset = -dashOffset;
+  for (const [color, offset] of [["rgba(255,252,240,0.95)", 0], ["rgba(197,61,46,0.95)", 4]] as const) {
+    ctx.strokeStyle = color;
+    ctx.lineDashOffset = -dashOffset - offset;
+    ctx.beginPath();
+    for (const i of o.cells) {
+      const r = rowOf(i), c = colOf(i);
+      const { x, y, s } = cellRect(r, c);
+      if (!has(r + 1, c)) { ctx.moveTo(x, y); ctx.lineTo(x + s, y); }          // north edge (top)
+      if (!has(r - 1, c)) { ctx.moveTo(x, y + s); ctx.lineTo(x + s, y + s); }  // south edge
+      if (!has(r, c - 1)) { ctx.moveTo(x, y); ctx.lineTo(x, y + s); }
+      if (!has(r, c + 1)) { ctx.moveTo(x + s, y); ctx.lineTo(x + s, y + s); }
+    }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // label tag above the north-west corner of the footprint
+  let tr = -1, tc = NC;
+  for (const i of o.cells) {
+    const r = rowOf(i), c = colOf(i);
+    if (r > tr || (r === tr && c < tc)) { tr = r; tc = c; }
+  }
+  const { x, y } = cellRect(tr, tc);
+  ctx.font = "bold 10px 'JetBrains Mono', ui-monospace, monospace";
+  const w = ctx.measureText(o.label).width + 8;
+  const ty = Math.max(2, y - 16);
+  ctx.fillStyle = "rgba(197,61,46,0.95)";
+  ctx.fillRect(x, ty, w, 14);
+  ctx.fillStyle = "#fffaf0";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(o.label, x + 4, ty + 7.5);
+  ctx.restore();
+}
 
 export interface Ripple { id: number; r: number; c: number; kind: "shock" | "run" | "select" }
 
@@ -40,6 +86,9 @@ interface Props {
   showScenery: boolean;
   running: boolean;
   focusRegion: string | null;
+  shockOutlines: ShockOutline[];
+  /** Prime | Branched curtain: left of the divider shows Prime, right shows Branched. */
+  compare: boolean;
 }
 
 const GAP = 1.2;                     // px between pixels — the pixel-art signature
@@ -53,9 +102,9 @@ export default function PixelGrid(props: Props) {
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const celebrationRef = useRef<HTMLCanvasElement>(null);
-  const cannonRef = useRef<confetti.CreateTypes | null>(null);
-  const [celebrating, setCelebrating] = useState(false);
+  const [curtain, setCurtain] = useState(0.5);            // divider position, fraction of grid width
+  const curtainRef = useRef(0.5);
+  curtainRef.current = curtain;
   const [hover, setHover] = useState<number | null>(null);
   const [geom, setGeom] = useState({ cell: 16, ox: 0, oy: 0, w: 0, h: 0 });
 
@@ -97,31 +146,6 @@ export default function PixelGrid(props: Props) {
     const b = animate(scaleRef.current, { v: target.scale, duration: 420, ease: "outCubic" });
     return () => { a.pause(); b.pause(); };
   }, [target, reduceMotion]);
-
-  useEffect(() => {
-    if (!celebrationRef.current) return;
-    const cannon = confetti.create(celebrationRef.current, { resize: true, disableForReducedMotion: true });
-    cannonRef.current = cannon;
-    return () => { cannon.reset(); cannonRef.current = null; };
-  }, []);
-
-  useEffect(() => {
-    if (!timeline || !props.showScenery || reduceMotion) return;
-    const diverged = timeline.branched.tp.some((v, i) => Math.abs(v - timeline.prime.tp[i]) > 1e-5)
-      || timeline.branched.t2m.some((v, i) => Math.abs(v - timeline.prime.t2m[i]) > 1e-5);
-    if (!diverged) return;
-    setCelebrating(true);
-    void cannonRef.current?.({ particleCount: 48, spread: 85, startVelocity: 24, gravity: 0.8, ticks: 95, flat: true, shapes: ["square"], colors: ["#efb52f", "#ce4d34", "#438238", "#529db5"], origin: { x: 0.5, y: 0.65 } });
-    const timeout = window.setTimeout(() => setCelebrating(false), 2000);
-    return () => { window.clearTimeout(timeout); setCelebrating(false); };
-  }, [timeline?.runId, props.showScenery, reduceMotion]);
-
-  useEffect(() => {
-    if (!props.showScenery || reduceMotion) {
-      cannonRef.current?.reset();
-      setCelebrating(false);
-    }
-  }, [props.showScenery, reduceMotion]);
 
   useEffect(() => {
     if (!timeline || reduceMotion) { sweepRef.current.v = 1; return; }
@@ -252,7 +276,13 @@ export default function PixelGrid(props: Props) {
       }
 
       // ── cells: terrain base + data painted on top ──
-      const strong = p.view === "diff";
+      const strong = p.view === "diff" && !p.compare;
+      const splitX = ox + curtainRef.current * NC * cell;
+      let cmpL: Float32Array | null = null, cmpR: Float32Array | null = null;
+      if (p.compare && p.timeline) {
+        cmpL = p.lens && p.lensOut ? p.lensOut.base : frame(p.timeline.prime[p.variable], p.day);
+        cmpR = p.lens && p.lensOut ? p.lensOut.value : frame(p.timeline.branched[p.variable], p.day);
+      }
       for (let r = 0; r < NR; r++) {
         const y = screenY(r, cell, oy, half);
         for (let c = 0; c < NC; c++) {
@@ -271,7 +301,10 @@ export default function PixelGrid(props: Props) {
           ctx.fillRect(x, y, px, px);
 
           if (p.timeline) {
-            const col = colorFor(disp[i]);
+            // curtain compare: same absolute colour scale on both sides, Prime left / Branched right
+            const col = cmpL && cmpR
+              ? colorForFieldValue((x + px / 2 < splitX ? cmpL : cmpR)[i], 1, "branched", p.variable, p.lens, p.lensOut)
+              : colorFor(disp[i]);
             const a = !p.showScenery ? 1 : mask === 2 ? (strong ? 0.92 : 0.62) : mask === 0 ? (strong ? 0.65 : 0.16) : (strong ? 0.45 : 0.18);
             ctx.fillStyle = rgbCss(col, a);
             ctx.fillRect(x, y, px, px);
@@ -452,6 +485,31 @@ export default function PixelGrid(props: Props) {
           ctx.lineWidth = 1;
           ctx.strokeRect(x + 0.5, y + 0.5, px - 1, px - 1);
         }
+      }
+
+      // ── armed shock outlines (exact perturbed cells) + "+3 K" style labels ──
+      for (const o of p.shockOutlines) {
+        drawShockOutline(ctx, o, (r, c) => ({ x: ox + c * cell + half, y: screenY(r, cell, oy, half), s: px }), tick * 0.25);
+      }
+
+      // ── Prime | Branched curtain divider ──
+      if (cmpL && cmpR) {
+        const top = oy, bot = oy + NR * cell;
+        ctx.fillStyle = "rgba(122,47,31,0.9)";
+        ctx.fillRect(splitX - 1.5, top, 3, bot - top);
+        ctx.font = "bold 10px 'JetBrains Mono', ui-monospace, monospace";
+        ctx.textBaseline = "middle";
+        const tag = (text: string, x: number, align: "left" | "right", bg: string) => {
+          const w = ctx.measureText(text).width + 10;
+          const bx = align === "right" ? x - w : x;
+          ctx.fillStyle = bg;
+          ctx.fillRect(bx, top + 4, w, 16);
+          ctx.fillStyle = "#fffaf0";
+          ctx.textAlign = "left";
+          ctx.fillText(text, bx + 5, top + 12.5);
+        };
+        tag("◀ PRIME", splitX - 6, "right", "rgba(29,111,163,0.95)");
+        tag("BRANCHED ▶", splitX + 6, "left", "rgba(192,122,8,0.95)");
       }
 
       // ── brush preview ──
@@ -684,14 +742,32 @@ export default function PixelGrid(props: Props) {
         onContextMenu={(e) => e.preventDefault()}
       />
 
-      <canvas ref={celebrationRef} aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 h-full w-full" />
-      <AnimatePresence>
-        {celebrating && (
-          <motion.div initial={{ opacity: 0, y: 20, scale: 0.8 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -20 }} className="pointer-events-none absolute left-1/2 top-14 z-30 -translate-x-1/2 border-2 border-inkline bg-panel px-5 py-3 font-pixel text-xs text-shock shadow-[4px_4px_0_#69442e]">
-            A NEW TIMELINE!
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* curtain drag handle (Prime | Branched compare) */}
+      {props.compare && timeline && geom.w > 0 && (
+        <div
+          role="slider"
+          aria-label="Prime versus Branched divider"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(curtain * 100)}
+          tabIndex={0}
+          className="absolute z-20 flex cursor-ew-resize touch-none items-center justify-center"
+          style={{ left: geom.ox + curtain * NC * geom.cell - 12, top: geom.oy, width: 24, height: NR * geom.cell }}
+          onPointerDown={(e) => { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); e.stopPropagation(); }}
+          onPointerMove={(e) => {
+            if (!(e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) return;
+            const rect = wrapRef.current!.getBoundingClientRect();
+            const f = (e.clientX - rect.left - geom.ox) / (NC * geom.cell);
+            setCurtain(Math.max(0, Math.min(1, f)));
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft") setCurtain((v) => Math.max(0, v - 1 / NC));
+            if (e.key === "ArrowRight") setCurtain((v) => Math.min(1, v + 1 / NC));
+          }}
+        >
+          <div className="grid size-6 place-items-center border-2 border-inkline bg-panel font-mono text-[10px] text-ink shadow-[2px_2px_0_#69442e]">⇔</div>
+        </div>
+      )}
 
       {/* corner registration marks — instrument-panel feel */}
       {[

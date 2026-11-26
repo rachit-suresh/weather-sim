@@ -202,8 +202,8 @@ export const LENSES: LensDef[] = [
     id: "energy",
     name: "Crop, Wind & Solar",
     short: "AGRI+PWR",
-    tagline: "Water balance, wind power density, PV cloud penalty",
-    unit: "Δ yield %",
+    tagline: "Map = crop water balance (rain − evaporation); wind power & PV penalty as side metrics",
+    unit: "mm/day",
     inputs: ["tp", "t2m", "u10", "v10", "tcwv"],
     formula: "WB = tp − PET(Hargreaves);  WPD = ½ρV₁₀₀³, V₁₀₀ = V₁₀·(100/10)^0.14;  τ = 1 − 0.006·tcwv − 0.02·tp",
     thresholds: "Water deficit < −2 mm/day = crop stress; WPD swing > ±15 % = grid-relevant",
@@ -293,7 +293,8 @@ export function computeLens(t: Timeline, lens: LensId, day: number): LensOutput 
     } else {
       const eb = energyIndex(B.tp[i], B.t2m[i], B.u10[i], B.v10[i], B.tcwv[i], latDeg, t.dayOfYear);
       const ep = energyIndex(P.tp[i], P.t2m[i], P.u10[i], P.v10[i], P.tcwv[i], latDeg, t.dayOfYear);
-      // Headline field: crop water balance (mm/day). Signed, so a deficit reads blue.
+      // Headline field: crop water balance WB = tp − PET (mm/day). Signed: drawn with ENERGY_RAMP, so a
+      // deficit (crop stress) reads brick-red and a surplus reads green; the legend says "WATER BALANCE mm/d".
       vb = eb.wb; vp = ep.wb;
       if (vb < -2) { cellsAlert++; areaKm2 += CELL_AREA_KM2[i]; }
       extraA += eb.wpd; extraA0 += ep.wpd;

@@ -5,7 +5,6 @@ import { Flap, PixelScrubber } from "@/components/ui";
 import { LineChart } from "@/components/bklit/charts/line-chart";
 import { Line } from "@/components/bklit/charts/line";
 import { Grid } from "@/components/bklit/charts/grid";
-import { XAxis } from "@/components/bklit/charts/x-axis";
 import { YAxis } from "@/components/bklit/charts/y-axis";
 import { ChartTooltip } from "@/components/bklit/charts/chart-tooltip";
 import { ReferenceArea } from "@/components/bklit/charts/reference-area";
@@ -14,13 +13,18 @@ import { INDIA_CELLS, display, displayUnit } from "@/lib/grid";
 import { lensSeries, lensById } from "@/lib/impact";
 import type { Multiverse } from "@/state/useMultiverse";
 
-const YEAR_START = Date.UTC(2020, 0, 1);
+/* The model only knows "N days after the last input day", never a calendar year, so the chart is
+   labelled Day +1 … Day +N. The chart library needs Date x-values: these are synthetic, one per day
+   from an arbitrary origin, and are never shown (custom axis row + tooltip below). */
+const ORIGIN_MS = Date.UTC(2000, 0, 1);
+const DAY_MS = 86400000;
+const dayLabel = (d: number) => `Day +${d + 1}`;
 
 export default function TimelineDeck({ m }: { m: Multiverse }) {
   const t = m.timeline;
-  const doy = t?.dayOfYear ?? 196;
-  const baseMs = YEAR_START + doy * 86400000;
-  const dayDate = (d: number) => new Date(baseMs + d * 86400000);
+  const baseMs = ORIGIN_MS;
+  const dayDate = (d: number) => new Date(baseMs + d * DAY_MS);
+  const nDays = t?.days ?? m.steps;
 
   const data = useMemo(() => {
     if (!t) return [];
@@ -107,12 +111,39 @@ export default function TimelineDeck({ m }: { m: Multiverse }) {
             <Line dataKey="Prime" stroke="#1d6fa3" strokeWidth={1.8} curve={curveMonotoneX} fadeEdges={false} />
             <Line dataKey="Branched" stroke="#c07a08" strokeWidth={2.2} curve={curveMonotoneX} glow fadeEdges={false} />
             <YAxis numTicks={3} formatValue={(v) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1))} />
-            <XAxis numTicks={5} />
-            <ChartTooltip showDatePill={false} />
+            <ChartTooltip
+              showDatePill={false}
+              content={({ point, index }) => {
+                const pv = Number(point.Prime), bv = Number(point.Branched);
+                const fmt = (v: number) => (Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2));
+                return (
+                  <div className="panel px-2 py-1.5 font-mono text-[10px] leading-tight">
+                    <div className="font-pixel text-[8px] text-ink-dim">{dayLabel(index)}</div>
+                    <div className="mt-0.5 text-prime">Prime {fmt(pv)} {unit}</div>
+                    <div className="text-branch">Branched {fmt(bv)} {unit}</div>
+                    <div className="text-ink-faint">Δ {bv - pv >= 0 ? "+" : ""}{fmt(bv - pv)}</div>
+                  </div>
+                );
+              }}
+            />
           </LineChart>
         ) : (
           <div className="grid h-full place-items-center font-pixel text-[9px] text-ink-faint mm-pulse">
             AWAITING /simulate
+          </div>
+        )}
+        {t && data.length > 1 && (
+          // x-axis: one "Day +N" label per forecast day, aligned with the chart's plot margins (52 / 26 px)
+          <div className="pointer-events-none absolute inset-x-1 bottom-3 h-3 font-mono text-[8px] text-ink-faint">
+            {data.map((_, d) => (
+              <span
+                key={d}
+                className={`absolute -translate-x-1/2 whitespace-nowrap ${d === m.day ? "text-prime" : ""}`}
+                style={{ left: `calc(52px + (100% - 78px) * ${d / (data.length - 1)})` }}
+              >
+                {nDays > 7 && d % 2 === 1 && d !== m.day ? "" : dayLabel(d)}
+              </span>
+            ))}
           </div>
         )}
       </div>
