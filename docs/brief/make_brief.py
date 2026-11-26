@@ -21,7 +21,7 @@ from reportlab.platypus import (KeepTogether, PageBreak, Paragraph, SimpleDocTem
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-TEAM = "[TEAM NAME]"
+TEAM = "Team Sage"
 REPO = "github.com/rachit-suresh/weather-sim"
 
 INK, MUTED, ACCENT, RULE = colors.HexColor("#14202b"), colors.HexColor("#5b6773"), colors.HexColor("#1d6fb8"), colors.HexColor("#c9d2da")
