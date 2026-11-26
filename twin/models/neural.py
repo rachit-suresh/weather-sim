@@ -1,4 +1,6 @@
-"""Any torch network family wrapped as a TwinModel. Checkpoint = {family, net_config, codec, state_dict}."""
+"""Any torch network family wrapped as a TwinModel.
+Checkpoint = {family, net_config, codec, state_dict} + optional "inputs" ({"latlon": bool}, spec EDG-2 F6) and
+"rollout" (edge relax / two-part rain head, spec EDG-2 F4 and RAIN-3). Old checkpoints without them still load."""
 from __future__ import annotations
 
 import os
@@ -19,7 +21,7 @@ class NeuralModel(TwinModel):
         torch.set_num_threads(int(os.environ.get("TWIN_THREADS", "4")))     # sandbox has 4 cores; never oversubscribe
         torch.set_grad_enabled(False)
         from ..nets import build_net
-        from ..nets.common import edge_distance, static_features
+        from ..nets.common import fixed_maps, n_inputs
 
         path = Path(checkpoint)
         if not path.is_absolute():
@@ -28,9 +30,12 @@ class NeuralModel(TwinModel):
         self.torch = torch
         self.name = f"{ck['family']}:{path.stem}"
         self.codec = Codec.from_dict(ck["codec"])
-        self.net = build_net(ck["family"], **ck["net_config"]).eval()
+        latlon = bool(ck.get("inputs", {}).get("latlon", False))
+        self.rcfg = ck.get("rollout", {}) or {}
+        n_out = 7 if self.rcfg.get("rain_head") == "two_part" else 6
+        self.net = build_net(ck["family"], n_inputs(latlon), n_out, **ck["net_config"]).eval()
         self.net.load_state_dict(ck["state_dict"])
-        self.fixed = torch.from_numpy(np.concatenate([static_features(load_static()), edge_distance()]))
+        self.fixed = torch.from_numpy(fixed_maps(load_static(), latlon))
 
     def rollout(self, init_states, doy, steps):
         torch = self.torch
@@ -39,7 +44,7 @@ class NeuralModel(TwinModel):
         hist = torch.from_numpy(self.codec.encode(init_states, [doy - 2, doy - 1, doy]))[None]
         clim_n = torch.from_numpy(clim_feature(out_doys))[None]
         sc = torch.from_numpy(np.stack([sincos(d) for d in out_doys]))[None]
-        z = rollout(self.net, hist, clim_n, sc, self.fixed, steps)[0].numpy()
+        z = rollout(self.net, hist, clim_n, sc, self.fixed, steps, self.rcfg, mode="infer")[0].numpy()
         return self.codec.decode(z, out_doys)
 
     def warmup(self):

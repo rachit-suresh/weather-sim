@@ -16,7 +16,7 @@ from twin.climatology import load_static
 from twin.codec import Codec, clim_feature
 from twin.config import ARTIFACTS, CHANNELS
 from twin.lgbm_features import features
-from twin.nets.common import edge_distance
+from twin.nets.common import edge_distance  # LightGBM keeps its own 3-map layout
 
 from .data import TRAIN_YEARS, VAL_YEARS, load, window_starts
 from .train_nn import anomaly_std

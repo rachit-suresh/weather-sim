@@ -124,9 +124,10 @@ def main(argv=None):
     q_fc, q_tr = fit_qmap(rescale(pb, tr, s, on_all), tr)
 
     va = collect(engine, damped, ds, list(pick_events(ds, VAL_YEARS).values()) + random_windows(ds, VAL_YEARS))
-    vb = blend(va, w)
-    log = {"raw": points(va["pred"], va), "blend": points(vb, va)}
-    on = np.zeros(6, bool); best = log["blend"]
+    log = {"raw": points(va["pred"], va), "blend": points(blend(va, w), va)}
+    blend_on = bool(log["blend"] > log["raw"] + 1e-6)                # ROL-3 (spec 1.1): keep only if it helps
+    vb = blend(va, w) if blend_on else va["pred"]
+    on = np.zeros(6, bool); best = max(log["raw"], log["blend"])
     for c in range(6):                                               # greedy per-channel rescale (SHP-3)
         if c == TP:
             continue
@@ -141,11 +142,13 @@ def main(argv=None):
     log["rainmap"] = p_map
 
     out = ARTIFACTS / "post" / f"{a.name}.npz"; out.parent.mkdir(exist_ok=True)
-    np.savez_compressed(out, blend_w=w, scale=s, scale_on=on, q_fc=q_fc, q_true=q_tr, rainmap_on=np.array(rain_on))
+    np.savez_compressed(out, blend_w=w, scale=s, scale_on=on, q_fc=q_fc, q_true=q_tr, rainmap_on=np.array(rain_on),
+                        blend_on=np.array(blend_on))
     print(f"wrote {out}")
     print("blend weight lead1/8:", w[0].round(2), w[7].round(2))
     print("rescale lead8:", s[7].round(2), "on:", [n for n, o in zip(C.CHANNELS, on) if o])
-    print("val points (no shocks, /55):", {k: round(v, 2) for k, v in log.items()}, "rainmap_on:", rain_on)
+    print("val points (no shocks, /55):", {k: round(v, 2) for k, v in log.items()}, "blend_on:", blend_on,
+          "rainmap_on:", rain_on)
 
 
 if __name__ == "__main__":

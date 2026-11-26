@@ -9,6 +9,7 @@ npz contents:
   q_fc      [4, L, Q]    rain quantiles of the (blended, rescaled) forecast, per season and lead day
   q_true    [4, L, Q]    rain quantiles of the truth, same layout
   rainmap_on  [] bool    whether the rain map is used (chosen on validation years)
+  blend_on    [] bool    whether the blend is used (spec 1.1 ROL-3; files without it: off)
 Seasons: 0 = Dec-Feb, 1 = Mar-May, 2 = Jun-Sep, 3 = Oct-Nov (by day of year).
 """
 from __future__ import annotations
@@ -48,7 +49,7 @@ class PostProcessed(TwinModel):
         self.scale = z["scale"].astype("f4")
         self.scale_on = z["scale_on"].astype(bool)
         self.q_fc, self.q_true = z["q_fc"].astype("f4"), z["q_true"].astype("f4")
-        self.use_blend = True if blend is None else bool(blend)
+        self.use_blend = bool(z["blend_on"]) if (blend is None and "blend_on" in z.files) else bool(blend)
         self.use_rescale = True if rescale is None else bool(rescale)
         self.use_rainmap = bool(z["rainmap_on"]) if rainmap is None else bool(rainmap)
         tags = [t for t, on in (("blend", self.use_blend), ("rescale", self.use_rescale), ("rainmap", self.use_rainmap)) if on]

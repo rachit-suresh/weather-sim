@@ -6,6 +6,7 @@
 Stages already present in the leaderboard are skipped.
 
     python -m training.run2 --family cnn --threads 3
+    python -m training.run2 --family unet --prefix p2 --suffix edge --options "--edge-relax"     (phase 2 screening)
 """
 from __future__ import annotations
 
@@ -30,19 +31,21 @@ def main(argv=None):
     ap.add_argument("--prefix", default="r2")
     ap.add_argument("--net", default="{}")
     ap.add_argument("--curriculum", default=None, help="override (smoke tests only)")
+    ap.add_argument("--suffix", default="", help="variant name, e.g. edge -> p2_unet_edge")
+    ap.add_argument("--options", default="", help="extra train_nn flags, e.g. '--edge-relax --shock-loss 5'")
     a = ap.parse_args(argv)
     os.environ["TWIN_THREADS"] = str(a.threads)
     from . import fit_post, train_nn
     from .evaluate import evaluate
 
-    name = f"{a.prefix}_{a.family}"
+    name = f"{a.prefix}_{a.family}" + (f"_{a.suffix}" if a.suffix else "")
     ckpt = ARTIFACTS / "models" / f"{name}.pt"
     base = {"model": "neural", "checkpoint": f"models/{name}.pt"}
     tags = done_tags()
     if name not in tags:
         if not (ckpt.exists() and (ROOT / "runs" / "ckpt" / f"{name}_done").exists()):
             argv_t = ["--family", a.family, "--name", name, "--threads", str(a.threads), "--net", a.net,
-                      "--no-eval", "--resume"] + (["--curriculum", a.curriculum] if a.curriculum else [])
+                      "--no-eval", "--resume"] + (["--curriculum", a.curriculum] if a.curriculum else []) + a.options.split()
             train_nn.main(argv_t)
             (ROOT / "runs" / "ckpt" / f"{name}_done").touch()
         evaluate(base, "val", name)
