@@ -205,14 +205,16 @@ def build(out: Path):
     s.append(P("4. System architecture", h2))
     s.append(architecture())
     s.append(PageBreak())                                            # organisers: page 2 = visualization + impact
-    s.append(P("5. Visualization: an interactive multiverse map", h2))
-    s += B(["<b>Live coupling.</b> Every map in the dashboard (<font face='Courier'>dashboard/</font>, plain HTML/JS, works offline) is a "
-            "fresh call to our server (about 60 ms); nothing is pre-rendered.",
-            "<b>Three views</b> for any variable and day: Prime timeline, Shocked timeline and Difference (the pure effect of the shock, "
-            "valid because the model is deterministic). Coastline overlay, values on hover.",
-            "<b>Shock editor.</b> Drag a box on the map, pick a variable and \"+ value\" or \"+ %\"; presets reproduce the judges' "
-            "warm-Bay and weak-wind shocks, so a new shock can be applied live during the demo.",
-            "<b>Start states</b> from held-out years: monsoon onset, heavy rain, heatwave, cyclone and winter rain."])
+    s.append(P("5. Visualization: the Multiverse Map", h2))
+    s += B(["<b>Live coupling.</b> The dashboard (React source in <font face='Courier'>frontend/</font>, prebuilt static copy in "
+            "<font face='Courier'>dashboard/</font>, works offline) calls our server for every timeline (about 55-65 ms); nothing is "
+            "pre-rendered. A model badge shows which network is serving.",
+            "<b>Globe and pixel-grid views</b> of India's 32 x 36 cells for any variable and day, with city stations, coastline and a "
+            "station inspector (click any cell for its values over time).",
+            "<b>Shock brush.</b> Paint a shock anywhere (temperature, rain, winds, pressure or water vapour; adjustable size), or arm "
+            "region presets such as a warm Bay of Bengal or a weaker Arabian Sea jet, then <b>branch the timeline</b>: Prime and "
+            "Shocked run side by side, with an India-mean time series of both.",
+            "<b>Start states</b> are real 3-day windows from held-out years (monsoon onset, heavy rain, heatwave, cyclone, winter rain)."])
     fig = Table([[a, b]], colWidths=[8.6 * cm, 8.6 * cm])
     fig.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
     s.append(fig)
@@ -220,21 +222,24 @@ def build(out: Path):
                "colour scales. (b) The warm Bay of Bengal shock (+3 K, +15% water vapour) changes rain where it was applied first; the "
                "change spreads inland over the following days.", small))
 
-    s.append(P("6. Impact: crop stress under a stalled monsoon", h2))
-    s.append(P("Kharif sowing in central and western India waits for June rain. Our impact module turns each live rollout into a "
-               "<b>10-day rain deficit versus normal</b> over cropland plus <b>days above 35 C</b> (heat stress at sowing), per cell and "
-               "per region, for both the Prime and the Shocked timelines, so a planner sees how a what-if changes the risk."))
+    s.append(P("6. Impact: three lenses on every what-if", h2))
+    s.append(P("Each lens is computed from the live Prime and Shocked rollouts and shows its formula, thresholds and caveats: "
+               "<b>Flood and extreme-rain risk</b> (rain intensity, column moisture, terrain; IMD heavy 64.5 and very heavy 115.6 mm/day); "
+               "<b>Heatwave stress</b> as wet-bulb temperature from temperature and humidity (31 C dangerous, 35 C survivability limit); "
+               "<b>Crop, wind and solar</b>: crop water balance = rain minus evapotranspiration (stress below -2 mm/day), wind power "
+               "density at hub height and a solar cloud penalty. Case study, a stalled monsoon (held-out 2019):"))
     rows2 = [["Region, 10 days after 6 June 2019 (held out)", "Normal", "Real", "Twin forecast", "Same as today", "Twin + warm Bay"],
              ["Central India", "45 mm", "10 mm (-78%)", "<b>12 mm (-74%)</b>", "4 mm", "22 mm (+90%)"],
              ["East India (Odisha, Bengal)", "73 mm", "16 mm (-78%)", "42 mm (-43%)", "73 mm", "64 mm (+54%)"],
              ["Maharashtra, west-central", "60 mm", "24 mm (-60%)", "54 mm (-10%)", "13 mm", "58 mm (+8%)"]]
     s.append(table(rows2, [5.2 * cm, 1.4 * cm, 2.3 * cm, 2.6 * cm, 2.2 * cm, 2.8 * cm]))
     s.append(P("The twin flagged the 2019 stalled monsoon over central India 10 days ahead (-74% forecast vs -78% real), where the "
-               "\"same as today\" guess overshot and the 17-year normal said all was well. The multiverse branch adds the policy "
-               "question: with a warmer Bay of Bengal, central India would have received almost twice the rain that week.", small))
+               "\"same as today\" guess overshot and the 17-year normal said all was well; in the crop lens this is a sowing-season "
+               "water deficit. The multiverse branch adds the policy question: with a warmer Bay of Bengal, central India would have "
+               "received almost twice the rain that week.", small))
 
     s.append(P("7. How we built it", h2))
-    s += B(["<b>Spec-driven.</b> <font face='Courier'>docs/SPEC.md</font> (v1.7) holds every decision with an ID; each change goes into the "
+    s += B(["<b>Spec-driven.</b> <font face='Courier'>docs/SPEC.md</font> (v1.9) holds every decision with an ID; each change goes into the "
             "spec first, then code. Problems are logged as code errors or spec errors (e.g. a soft-train / hard-inference rain gate "
             "was a spec error, caught by screening and fixed).",
             "<b>Reproducible.</b> Retraining the same recipe reproduces scores within 0.2 points; per-epoch checkpoints resume after "

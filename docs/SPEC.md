@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.8 (2026-11-26). **Status:** active.
+**Version:** 1.9 (2026-11-26). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -128,10 +128,13 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 
 ## 11. Impact module (decision J)
 
-- `IMP-1` Crop stress: rain deficit vs normal over land during the sowing season (June-July) plus heat above
-  35 C, computed from live `/simulate` output on the dashboard side. A cropland map is a later addition (needs
-  organiser OK for bundled non-weather maps). Other ideas parked in `docs/DECISIONS.md` section J.
-
+- `IMP-1` Impact module = three "lenses" computed in the dashboard (`frontend/src/lib/impact.ts`) from every live Prime
+  and Shocked rollout: (1) flood and extreme-rain risk index (rain intensity, column moisture, terrain slope; IMD heavy
+  64.5 / very heavy 115.6 mm/day); (2) heatwave stress as Stull wet-bulb temperature from t2m and humidity inferred from
+  water vapour (31 / 33 / 35 C thresholds); (3) crop water balance (rain minus Hargreaves evapotranspiration, stress
+  below -2 mm/day) plus wind power density and a solar cloud proxy. Each lens shows formula, thresholds and caveats.
+- `IMP-2` Dashboard (`dashboard/` built from `frontend/`): globe and flat pixel-grid views, shock brush and region
+  presets, branch timeline (Prime vs Shocked), station inspector, impact rail; offline (no CDN, fonts embedded).
 ## 12. Plan (updated in 1.1)
 
 - **Run 2 (now):** families CNN, U-Net, CNN+transformer hybrid, physics hybrid, ConvGRU with `REP-*`, `ROL-1..2`,
@@ -179,6 +182,8 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.4 (2026-11-26): D4 + edge relax screening added; r3_unet reuses p2_unet_d4st (identical run).
 - 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
 - 1.6 (2026-11-26): D4 + edge relax wins the screening; run 3b adds it to the other 4 families.
+- 1.9 (2026-11-26): spec error: `IMP-1` described a rain-deficit crop panel, but the team's merged dashboard implements
+  three impact lenses; spec updated to the product (`IMP-1`, new `IMP-2`).
 - 1.8 (2026-11-26): run 3 / 3b / ensembles / test-year check recorded; submission model `r3_cnn`; brief built by
   `docs/brief/make_brief.py` into `BRIEF.pdf`.
 - 1.7 (2026-11-26): organiser checklist: `CON-7` plain-git weights, `CON-8` real active model + validator,
