@@ -52,7 +52,7 @@ python serve.py --port 8000                  # terminal 1
 python -m http.server 5500 -d dashboard      # terminal 2, then open http://localhost:5500
 ```
 
-See `dashboard/README.md`.
+See `dashboard/README.md` and the server contract `docs/DASHBOARD_API.md` (with the DO NOTs).
 
 ## Train and evaluate
 
@@ -82,7 +82,7 @@ Repo scan rules that bite (details in `docs/GRADING_NOTES.md`):
 
 ## Model family sweep
 
-Results and lessons: `docs/RESULTS_SWEEP_1.md`. How each model works: `docs/MODEL_FAMILIES.md`,
+Results and lessons: `docs/RESULTS_SWEEP_1.md`. How everything works: `docs/HOW_THE_MODELS_WORK.md`, `docs/MODEL_FAMILIES.md`,
 `docs/PHYSICS_HYBRID.md`. Finish an interrupted sweep: `bash scripts/resume_sweep.sh <python>`.
 `train_nn.py` saves full training state every epoch (`runs/ckpt/`), so `--resume` continues after a shutdown.
 
