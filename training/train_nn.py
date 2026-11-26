@@ -163,6 +163,8 @@ def main(argv=None):
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--no-eval", action="store_true")
     ap.add_argument("--resume", action="store_true", help="continue from runs/ckpt/<name>_last.pt if it exists")
+    ap.add_argument("--warm-start", default=None, help="checkpoint (relative to artifacts/) whose tensors with the "
+                    "same name and shape initialise the net, e.g. models/r3_cnn.pt (spec V2-E7); ignored on resume")
     a = ap.parse_args(argv)
     if a.rain_head == "two_part" and a.rain != "sqrt":
         raise SystemExit("--rain-head two_part needs --rain sqrt (spec RAIN-3)")
@@ -182,6 +184,13 @@ def main(argv=None):
     net_cfg = parse_net_config(a.net)
     net = build_net(a.family, n_inputs(a.latlon), 7 if a.rain_head == "two_part" else 6, **net_cfg).to(dev)
     n_par = sum(p.numel() for p in net.parameters())
+    if a.warm_start:                                                     # V2-E7: reuse r3_cnn where shapes allow
+        from twin.nets.advcnn import warm_start
+        src = torch.load(ARTIFACTS / a.warm_start, map_location=dev, weights_only=True)["state_dict"]
+        reused, fresh = warm_start(net, src)
+        n_re = sum(src[k].numel() for k in reused)
+        print(f"warm start from {a.warm_start}: reused {len(reused)} tensors ({n_re:,} params): {reused}; "
+              f"new: {fresh}", flush=True)
     wd = a.weight_decay if a.weight_decay is not None else (1e-3 if a.latlon else 1e-4)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=wd)
     cur = parse_curriculum(a.curriculum)

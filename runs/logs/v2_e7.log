@@ -1,0 +1,18 @@
+warm start from models/r3_cnn.pt: reused 16 tensors (238,791 params): ['inp.weight', 'inp.bias', 'body.0.c1.weight', 'body.0.c1.bias', 'body.0.c2.weight', 'body.0.c2.bias', 'body.1.c1.weight', 'body.1.c1.bias', 'body.1.c2.weight', 'body.1.c2.bias', 'body.2.c1.weight', 'body.2.c1.bias', 'body.2.c2.weight', 'body.2.c2.bias', 'out.weight', 'out.bias']; new: ['alpha', 'flow.0.0.weight', 'flow.0.0.bias', 'flow.0.2.weight', 'flow.0.2.bias', 'flow.1.0.weight', 'flow.1.0.bias', 'flow.1.2.weight', 'flow.1.2.bias', 'lift.0.weight', 'lift.0.bias', 'lift.1.weight', 'lift.1.bias', 'proj.0.weight', 'proj.1.weight']
+advcnn {} params=284,315 device=cpu rain=sqrt curriculum=[(1, 4), (2, 3), (4, 3), (8, 2)] options: edge_relax=False latlon=False rain_head=two_part shock_loss=0.0 wd=0.0001
+ep   1 unroll 1  train 0.4660  val 0.2918  306s
+ep   2 unroll 1  train 0.4596  val 0.2898  307s
+ep   3 unroll 1  train 0.4494  val 0.2842  315s
+ep   4 unroll 1  train 0.4409  val 0.2790  336s
+ep   5 unroll 2  train 0.6414  val 0.4255  672s
+ep   6 unroll 2  train 0.6204  val 0.4225  531s
+warm start from models/r3_cnn.pt: reused 16 tensors (238,791 params): ['inp.weight', 'inp.bias', 'body.0.c1.weight', 'body.0.c1.bias', 'body.0.c2.weight', 'body.0.c2.bias', 'body.1.c1.weight', 'body.1.c1.bias', 'body.1.c2.weight', 'body.1.c2.bias', 'body.2.c1.weight', 'body.2.c1.bias', 'body.2.c2.weight', 'body.2.c2.bias', 'out.weight', 'out.bias']; new: ['alpha', 'flow.0.0.weight', 'flow.0.0.bias', 'flow.0.2.weight', 'flow.0.2.bias', 'flow.1.0.weight', 'flow.1.0.bias', 'flow.1.2.weight', 'flow.1.2.bias', 'lift.0.weight', 'lift.0.bias', 'lift.1.weight', 'lift.1.bias', 'proj.0.weight', 'proj.1.weight']
+advcnn {} params=284,315 device=cpu rain=sqrt curriculum=[(1, 4), (2, 3), (4, 3), (8, 2)] options: edge_relax=False latlon=False rain_head=two_part shock_loss=0.0 wd=0.0001
+resumed v2_e7 after epoch 6 (best val inf)
+ep   7 unroll 2  train 0.6042  val 0.4054  320s
+ep   8 unroll 4  train 0.8395  val 0.5954  734s
+ep   9 unroll 4  train 0.8164  val 0.5910  678s
+ep  10 unroll 4  train 0.7990  val 0.5928  588s
+ep  11 unroll 8  train 1.0418  val 0.7864  1017s
+ep  12 unroll 8  train 1.0283  val 0.7885  830s
+saved C:\Users\vangs\cursor\devforge_2\wt-e7\artifacts\models\v2_e7.pt best val 0.7864
