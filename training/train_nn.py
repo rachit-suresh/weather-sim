@@ -5,6 +5,7 @@
     python -m training.train_nn --family unet --name u_ll --latlon              # + F6 (spec EDG-2)
     python -m training.train_nn --family unet --name u_d4 --rain-head two_part  # + D4 (spec RAIN-3)
     python -m training.train_nn --family unet --name u_sg --shock-loss 5        # + shock guard (spec SHP-8)
+    python -m training.train_nn --family cnn --name c_e6 --net 'pad="zeros"' --random-crop   # spec V2-E6
 
 Unroll curriculum "1:4,2:3,4:3,8:2" = 4 epochs with 1-step loss, then 3 epochs unrolling 2 steps, and so on.
 Saves artifacts/models/<name>.pt (state_dict + config only) and scores it with training.evaluate.
@@ -23,7 +24,7 @@ from twin.climatology import load_static
 from twin.codec import Codec, clim_feature
 from twin.config import ARTIFACTS, LAT, NLAT, NLON, T2M, TCWV, TP, load_stats
 from twin.nets import build_net
-from twin.nets.common import EDGE_RELAX_DEFAULT, fixed_maps, n_inputs
+from twin.nets.common import EDGE_RELAX_DEFAULT, edge_distance, fixed_maps, n_inputs
 from twin.nets.rollout import rollout
 
 from .data import ROOT, TRAIN_YEARS, VAL_YEARS, load, window_starts
@@ -32,6 +33,7 @@ HEAVY_MM = 10.0     # RAIN-2 threshold (same as the judge's heavy-rain CSI)
 WET_MM = 1.0        # RAIN-3 "it rains" threshold for the two-part head
 SHOCK_BOX = 12      # SHP-8 random shock box size (cells)
 SHOCK_LIMIT = 4.0   # SHP-8 penalty starts above 4 std (judge fails above 5)
+CROP_MIN = (24, 28) # V2-E6 smallest random training crop (rows, cols); the largest is the full 32 x 36 grid
 
 
 class Tensors:
@@ -64,6 +66,18 @@ def anomaly_std(rain_mode: str) -> list[float]:
     z = np.concatenate([c.encode(ds.data[i:i + 512], ds.doy[i:i + 512].astype(float))
                         for i in np.where(m)[0][::512]])                  # anomaly with std 1 -> raw anomaly
     return [float(x) for x in z.std(axis=(0, 2, 3))]
+
+
+def random_crop(tensors, fixed: torch.Tensor, lat_w: torch.Tensor):
+    """V2-E6 (b): cut every spatial tensor of one batch to the same random sub-window (height 24-32, width 28-36,
+    random position). tensors = [..., H, W] maps; fixed = [lsm, oro, edge (, lat, lon)] with the edge-distance map
+    recomputed for the crop, so the net sees 'edge' behaviour at varying places; lat_w [H, 1] latitude weights."""
+    h = np.random.randint(CROP_MIN[0], NLAT + 1); w = np.random.randint(CROP_MIN[1], NLON + 1)
+    i0 = np.random.randint(0, NLAT - h + 1); j0 = np.random.randint(0, NLON - w + 1)
+    rows, cols = slice(i0, i0 + h), slice(j0, j0 + w)
+    fx = fixed[:, rows, cols].clone()
+    fx[2] = torch.from_numpy(edge_distance(h, w)[0]).to(fx)
+    return [x[..., rows, cols] for x in tensors], fx, lat_w[rows]
 
 
 def loss_fn(pred, true, lat_w, ch_w, var_w: float = 0.0, spec_w: float = 0.0, heavy=None, heavy_w: float = 1.0):
@@ -109,8 +123,9 @@ class PhysScale:
 def shock_penalty(net, hist, cf, sc, fixed, unroll, rcfg, pred, ps: PhysScale):
     """SHP-8: warm-ocean-style shock (+3 K, +15% water vapour) in a random 12x12 box on the last input day;
     penalise any response above SHOCK_LIMIT judge-std (the judge fails a shock above 5)."""
-    i0 = np.random.randint(0, NLAT - SHOCK_BOX + 1); j0 = np.random.randint(0, NLON - SHOCK_BOX + 1)
-    box = torch.zeros(NLAT, NLON, device=hist.device); box[i0:i0 + SHOCK_BOX, j0:j0 + SHOCK_BOX] = 1.0
+    h, w = hist.shape[-2:]                                             # full grid or a V2-E6 crop
+    i0 = np.random.randint(0, h - SHOCK_BOX + 1); j0 = np.random.randint(0, w - SHOCK_BOX + 1)
+    box = torch.zeros(h, w, device=hist.device); box[i0:i0 + SHOCK_BOX, j0:j0 + SHOCK_BOX] = 1.0
     last = hist[:, -1]
     tcwv_phys = last[:, TCWV] * ps.anom[TCWV] + (cf[:, 0, TCWV] * ps.std[TCWV] + ps.mean[TCWV])
     pert = torch.zeros_like(last)
@@ -156,6 +171,7 @@ def main(argv=None):
     ap.add_argument("--rain-head", default="none", choices=["none", "two_part"], help="RAIN-3 D4")
     ap.add_argument("--rain-bce", type=float, default=0.5, help="RAIN-3 weight of the rain/no-rain loss")
     ap.add_argument("--shock-loss", type=float, default=0.0, help="SHP-8 weight of the shock stability guard")
+    ap.add_argument("--random-crop", action="store_true", help="V2-E6 (b): train on random 24x28..32x36 crops")
     ap.add_argument("--weight-decay", type=float, default=None, help="default 1e-4, or 1e-3 with --latlon")
     ap.add_argument("--channel-weights", default="1,1,1,1,1,1")
     ap.add_argument("--seed", type=int, default=0)
@@ -192,7 +208,7 @@ def main(argv=None):
     ps = PhysScale(codec, dev) if a.shock_loss > 0 else None
     bce = torch.nn.BCEWithLogitsLoss()
     print(f"{a.family} {net_cfg} params={n_par:,} device={dev} rain={a.rain} curriculum={cur} "
-          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd}")
+          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd} random_crop={a.random_crop}")
 
     best, out_path = float("inf"), ARTIFACTS / "models" / f"{a.name}.pt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -218,12 +234,15 @@ def main(argv=None):
             perm = np.random.permutation(tr_idx)
             for bi, i in enumerate(range(0, len(perm), a.batch)):
                 hist, cf, sc, true, heavy, wet = T.batch(perm[i:i + a.batch], unroll)
-                pred, logits = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="train", return_logits=True)
-                loss = loss_fn(pred, true, lat_w, ch_w, a.var_loss, a.spec_loss, heavy, a.heavy_weight)
+                fixed, lw = T.fixed, lat_w
+                if a.random_crop:                                        # V2-E6 (b); validation stays full grid
+                    (hist, cf, true, heavy, wet), fixed, lw = random_crop([hist, cf, true, heavy, wet], T.fixed, lat_w)
+                pred, logits = rollout(net, hist, cf, sc, fixed, unroll, rcfg, mode="train", return_logits=True)
+                loss = loss_fn(pred, true, lw, ch_w, a.var_loss, a.spec_loss, heavy, a.heavy_weight)
                 if logits is not None:                                   # RAIN-3: learn "will it rain?"
                     loss = loss + a.rain_bce * bce(logits, wet.to(logits.dtype))
                 if ps is not None and bi % 4 == 0:                       # SHP-8: every 4th batch
-                    loss = loss + a.shock_loss * shock_penalty(net, hist, cf, sc, T.fixed, unroll, rcfg, pred, ps)
+                    loss = loss + a.shock_loss * shock_penalty(net, hist, cf, sc, fixed, unroll, rcfg, pred, ps)
                 opt.zero_grad(); loss.backward()
                 torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
                 opt.step()

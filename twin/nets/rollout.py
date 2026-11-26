@@ -44,7 +44,7 @@ def rollout(net, hist: torch.Tensor, clim_targets: torch.Tensor, sincos_targets:
     two_part = cfg.get("rain_head") == "two_part"
     relax = None
     if cfg.get("edge_relax"):
-        relax = torch.as_tensor(edge_relax_map(cfg["edge_relax"]), dtype=hist.dtype, device=hist.device)
+        relax = torch.as_tensor(edge_relax_map(cfg["edge_relax"], *hist.shape[-2:]), dtype=hist.dtype, device=hist.device)
     h = None
     outs, logits = [], []
     for k in range(steps):

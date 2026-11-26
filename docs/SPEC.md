@@ -205,6 +205,12 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   (keep the gate). Target: csi_skill and rain RMSE.
 - `V2-E6` Learned edges: zero padding in anomaly space instead of replicate, edge-distance input kept, random crops
   inside the 32 x 36 grid during training (fully convolutional). Target: edge-band RMSE and monsoon_stall propagation.
+  Concrete (v2 E6): (a) net option `pad="zeros"` (`--net pad=\"zeros\"`, stored in the checkpoint `net_config`;
+  default and old checkpoints stay `replicate`, `EDG-1`); (b) `--random-crop`: every training batch is cut to one
+  random sub-window, height 24-32 and width 28-36 (uniform, random position), applied consistently to inputs,
+  targets, masks, static maps and latitude weights; the edge-distance map is recomputed for the crop. Validation and
+  inference always use the full 32 x 36 grid. Exception to "one change per experiment": (a) and (b) are run together
+  in one training (`v2_e6`) because there is time for only one run on 1 thread; they serve the same target.
 - `V2-E7` One advect-and-correct model: learned velocity (capped <= 3 cells/day), semi-Lagrangian advection of learned
   feature channels in 2 substeps, local CNN correction inside each substep; warm-start from `r3_cnn` where shapes
   allow. Target: Fani track error and shock propagation without losing the mean.
@@ -212,6 +218,9 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   training with almost-fair CRPS, serve one fixed member. Target: sharpness and csi_skill; determinism must hold.
 
 ## Change log
+
+- v2 E6 (2026-11-26): `V2-E6` made concrete (pad option, crop sizes, edge map recomputed per crop) and allowed to
+  combine (a) zero padding + (b) random crops in one run (time for one run only); spec refinement, no rule changed.
 
 - v2 branch (2026-11-26): section 14 defines v2 experiments E2-E8, the protocol, win rule and resource rule.
 

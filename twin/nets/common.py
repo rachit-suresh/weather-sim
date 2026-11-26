@@ -23,19 +23,19 @@ N_OUT = 6
 EDGE_RELAX_DEFAULT = (0.7, 0.85, 0.95)      # spec EDG-2 (F4): factors at distance 0, 1, 2 from the edge
 
 
-def edge_cells() -> np.ndarray:
-    """[H, W] integer distance (cells) to the nearest grid edge."""
-    ii, jj = np.indices((NLAT, NLON))
-    return np.minimum.reduce([ii, jj, NLAT - 1 - ii, NLON - 1 - jj])
+def edge_cells(h: int = NLAT, w: int = NLON) -> np.ndarray:
+    """[H, W] integer distance (cells) to the nearest grid edge (h x w: a training crop, spec V2-E6)."""
+    ii, jj = np.indices((h, w))
+    return np.minimum.reduce([ii, jj, h - 1 - ii, w - 1 - jj])
 
 
-def edge_distance() -> np.ndarray:
-    return np.clip(edge_cells().astype("f4") / 8.0, 0.0, 1.0)[None]  # [1, H, W]
+def edge_distance(h: int = NLAT, w: int = NLON) -> np.ndarray:
+    return np.clip(edge_cells(h, w).astype("f4") / 8.0, 0.0, 1.0)[None]  # [1, H, W]
 
 
-def edge_relax_map(factors) -> np.ndarray:
+def edge_relax_map(factors, h: int = NLAT, w: int = NLON) -> np.ndarray:
     """[H, W] multiplier applied to the anomaly after every step (1 away from the edge)."""
-    d = edge_cells(); m = np.ones((NLAT, NLON), "f4")
+    d = edge_cells(h, w); m = np.ones((h, w), "f4")
     for k, f in enumerate(factors):
         m[d == k] = f
     return m
@@ -66,7 +66,7 @@ def make_input(hist: torch.Tensor, clim_target: torch.Tensor, sincos_target: tor
                fixed: torch.Tensor) -> torch.Tensor:
     """hist [B,3,6,H,W] anomalies, clim_target [B,6,H,W] normalised, sincos_target [B,2],
     fixed [3 or 5,H,W] (static 2 + edge 1 [+ lat, lon]) -> [B, n_inputs, H, W]."""
-    b = hist.shape[0]
-    sc = sincos_target[:, :, None, None].expand(b, 2, NLAT, NLON)
+    b, h, w = hist.shape[0], hist.shape[-2], hist.shape[-1]           # full grid, or a training crop (V2-E6)
+    sc = sincos_target[:, :, None, None].expand(b, 2, h, w)
     fx = fixed[None].expand(b, -1, -1, -1)
-    return torch.cat([hist.reshape(b, -1, NLAT, NLON), clim_target, fx[:, :2], sc, fx[:, 2:]], dim=1)
+    return torch.cat([hist.reshape(b, -1, h, w), clim_target, fx[:, :2], sc, fx[:, 2:]], dim=1)

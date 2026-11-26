@@ -134,6 +134,9 @@ Uses the organisers' own scoring code on held-out years:
 - **GELU:** smooth "keep positives, squash negatives" between layers (without it, stacked layers collapse to one).
 - **Residual:** a block computes `x + f(x)`, so it only adds a correction.
 - **Replicate padding:** at the grid edge, missing neighbours are copies of the edge cell.
+  v2 experiment E6 (spec `V2-E6`) adds the CNN option `pad="zeros"`: missing neighbours are 0, which in anomaly
+  space means "normal weather outside the box", and `--random-crop` trains on random sub-windows (24x28 up to
+  32x36, edge-distance map recomputed per crop) so edge behaviour is learned at many positions.
 
 ---
 
