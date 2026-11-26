@@ -8,6 +8,9 @@ Options (dict `cfg`, stored in the checkpoint as "rollout"):
   rain_head   "two_part"    spec RAIN-3 (D4): net output channel 6 is the logit of "rain > 1 mm/day"
   rain_ref    {mean, std, anom_std}  global mean/std of rain (mm/day) and the rain anomaly std (sqrt space),
                             needed to turn the gate into anomaly units (rain must use the sqrt transform)
+  noise       {maps, seed, members}  spec V2-E8: `maps` per-pixel noise input maps appended to every step's input.
+                            Training passes fresh noise [B,steps,maps,H,W]; without `noise` the fixed serving
+                            noise of member 0 (seeded, independent of the input) is used.
 Rain gate (spec 1.2): hard (amount where logit > 0, else 0) in both modes; in mode "train" gradients flow as if the
 gate were sigmoid(logit) (straight-through), so training and inference see the same rain.
 """
@@ -16,7 +19,7 @@ from __future__ import annotations
 import torch
 
 from ..config import TP
-from .common import edge_relax_map, make_input
+from .common import edge_relax_map, fixed_noise, make_input
 
 Z_CLAMP = 12.0     # anomalies beyond 12 std are unphysical: clamp to keep long rollouts stable
 
@@ -36,10 +39,16 @@ def _gate_rain(z, logit, clim_k, ref, mode):
 
 
 def rollout(net, hist: torch.Tensor, clim_targets: torch.Tensor, sincos_targets: torch.Tensor,
-            fixed: torch.Tensor, steps: int, cfg: dict | None = None, mode: str = "train", return_logits: bool = False):
+            fixed: torch.Tensor, steps: int, cfg: dict | None = None, mode: str = "train", return_logits: bool = False,
+            noise: torch.Tensor | None = None):
     """hist [B,3,6,H,W]; clim_targets [B,steps,6,H,W]; sincos_targets [B,steps,2] -> [B,steps,6,H,W] anomalies
-    (and [B,steps,H,W] rain logits if return_logits and the two-part head is on)."""
+    (and [B,steps,H,W] rain logits if return_logits and the two-part head is on).
+    noise [B,steps,maps,H,W] (V2-E8 only); None = fixed serving noise of member 0."""
     cfg = cfg or {}
+    ncfg = cfg.get("noise")
+    if ncfg and noise is None:
+        bank = torch.from_numpy(fixed_noise(ncfg["maps"], ncfg["seed"], 0, steps)).to(hist.device, hist.dtype)
+        noise = bank[None].expand(hist.shape[0], -1, -1, -1, -1)
     stateful = getattr(net, "stateful", False)
     two_part = cfg.get("rain_head") == "two_part"
     relax = None
@@ -49,6 +58,8 @@ def rollout(net, hist: torch.Tensor, clim_targets: torch.Tensor, sincos_targets:
     outs, logits = [], []
     for k in range(steps):
         x = make_input(hist, clim_targets[:, k], sincos_targets[:, k], fixed)
+        if ncfg:
+            x = torch.cat([x, noise[:, k]], dim=1)
         if stateful:
             out, h = net(x, h)
         else:

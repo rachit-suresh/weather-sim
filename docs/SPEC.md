@@ -210,8 +210,23 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   allow. Target: Fani track error and shock propagation without losing the mean.
 - `V2-E8` Fixed-seed CRPS residual head: per-pixel noise from a fixed seed independent of the input, 2-4 members in
   training with almost-fair CRPS, serve one fixed member. Target: sharpness and csi_skill; determinism must hold.
+  Concrete (E8 branch, option `--noise-maps N --crps-members M`, default off): the CNN gets N extra input maps
+  (default 2) of per-pixel N(0, 1) noise, appended after the usual inputs at every rollout step; no spatial pooling or
+  grid-wide normalisation of the noise (locality `LOC-1`). "Residual" = the network still predicts the change of the
+  anomaly (`REP-2`); the noise only enters as input. Training: every batch sample is rolled out M times (default 2)
+  with independent noise per member and step; the squared-error term of the loss is replaced by the almost-fair CRPS
+  (Lang et al., alpha = 0.95) over the M members, per channel, on normalised anomalies, with the same latitude weights
+  and the `RAIN-2` 3x factor at heavy-rain cells; `SHP-1`, `SHP-2` and the `RAIN-3` BCE are computed per member and
+  averaged. Serving (`RUN-3`): the noise of member m at step k is `default_rng([seed, m, k]).standard_normal` (seed 0,
+  float32), independent of the input and of the number of steps requested; one fixed member (m = 0) is served.
+  Best-epoch selection uses the plain MSE of that served member. Checkpoint stores `rollout.noise = {maps, seed,
+  members}`; a model spec may set `"members": n` to serve the mean (physical units) of members 0..n-1 (second spec).
 
 ## Change log
+
+- v2/e8 branch (2026-11-26): spec error (incomplete) in `V2-E8`: it did not say where the noise enters, which loss
+  terms CRPS replaces, how the fixed noise is drawn, which member is served or how the best epoch is chosen. Made
+  concrete (noise input maps, afCRPS replaces squared error, seeded per (member, step) noise, member 0 served).
 
 - v2 branch (2026-11-26): section 14 defines v2 experiments E2-E8, the protocol, win rule and resource rule.
 

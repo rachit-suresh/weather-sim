@@ -8,6 +8,7 @@ Per step the network sees (all on the 32 x 36 grid):
    1  distance to the domain edge (scaled 0..1), for the limited-area boundary problem
   --
   29 channels (N_IN). Option F6 (spec EDG-2, `latlon`): + 2 maps (latitude, longitude scaled to -1..1) = 31.
+  Option V2-E8 (`noise_maps`): + N per-pixel Gaussian noise maps, appended last (fixed seed when serving).
 The network predicts the change of the anomaly for the next day [6]; with the two-part rain head (RAIN-3)
 it also outputs a 7th map, the logit of "rain > 1 mm/day".
 """
@@ -58,8 +59,15 @@ def fixed_maps(static: np.ndarray, latlon: bool = False) -> np.ndarray:
     return np.concatenate(parts).astype("f4")
 
 
-def n_inputs(latlon: bool = False) -> int:
-    return N_IN + (2 if latlon else 0)
+def n_inputs(latlon: bool = False, noise_maps: int = 0) -> int:
+    return N_IN + (2 if latlon else 0) + int(noise_maps)
+
+
+def fixed_noise(maps: int, seed: int, member: int, steps: int) -> np.ndarray:
+    """Spec V2-E8 serving noise: [steps, maps, H, W] float32, per-pixel N(0, 1). Step k of member m always gets
+    default_rng([seed, m, k]), so it never depends on the input or on how many steps were asked for (RUN-3)."""
+    return np.stack([np.random.default_rng([int(seed), int(member), k]).standard_normal((maps, NLAT, NLON))
+                     for k in range(steps)]).astype("f4")
 
 
 def make_input(hist: torch.Tensor, clim_target: torch.Tensor, sincos_target: torch.Tensor,

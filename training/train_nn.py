@@ -5,6 +5,7 @@
     python -m training.train_nn --family unet --name u_ll --latlon              # + F6 (spec EDG-2)
     python -m training.train_nn --family unet --name u_d4 --rain-head two_part  # + D4 (spec RAIN-3)
     python -m training.train_nn --family unet --name u_sg --shock-loss 5        # + shock guard (spec SHP-8)
+    python -m training.train_nn --family cnn --name c_e8 --noise-maps 2 --crps-members 2   # + V2-E8 fixed-seed CRPS
 
 Unroll curriculum "1:4,2:3,4:3,8:2" = 4 epochs with 1-step loss, then 3 epochs unrolling 2 steps, and so on.
 Saves artifacts/models/<name>.pt (state_dict + config only) and scores it with training.evaluate.
@@ -66,10 +67,27 @@ def anomaly_std(rain_mode: str) -> list[float]:
     return [float(x) for x in z.std(axis=(0, 2, 3))]
 
 
-def loss_fn(pred, true, lat_w, ch_w, var_w: float = 0.0, spec_w: float = 0.0, heavy=None, heavy_w: float = 1.0):
+def afcrps(pred, true, members: int, alpha: float):
+    """Almost-fair CRPS (Lang et al., AIFS-CRPS) per cell. pred [M*B,...] member-major, true [B,...] -> [B,...].
+    afCRPS = mean_j |x_j - y| - (1 - eps) / (2 M (M - 1)) * sum_{j != k} |x_j - x_k|, eps = (1 - alpha) / M."""
+    x = pred.reshape(members, -1, *pred.shape[1:])
+    skill = (x - true[None]).abs().mean(0)
+    pair = sum((x[j] - x[k]).abs() for j in range(members) for k in range(j + 1, members)) * 2.0
+    eps = (1.0 - alpha) / members
+    return skill - (1.0 - eps) * pair / (2.0 * members * (members - 1))
+
+
+def loss_fn(pred, true, lat_w, ch_w, var_w: float = 0.0, spec_w: float = 0.0, heavy=None, heavy_w: float = 1.0,
+            members: int = 1, alpha: float = 0.95):
     """pred/true [B,K,6,H,W] anomalies. Latitude-weighted squared error per channel, plus (spec v1):
-    RAIN-2 heavy-rain cells count heavy_w x on the rain channel; SHP-1 spread loss; SHP-2 spectral loss."""
-    se = (pred - true) ** 2 * lat_w
+    RAIN-2 heavy-rain cells count heavy_w x on the rain channel; SHP-1 spread loss; SHP-2 spectral loss.
+    V2-E8 (members > 1): pred is [M*B,...] (M members, member-major) and the squared error is replaced by the
+    almost-fair CRPS over the members; SHP-1/SHP-2 are taken per member and averaged."""
+    if members > 1:
+        se = afcrps(pred, true, members, alpha) * lat_w
+        true = true.repeat(members, *([1] * (true.dim() - 1)))           # per-member targets for SHP-1/SHP-2
+    else:
+        se = (pred - true) ** 2 * lat_w
     if heavy is not None and heavy_w != 1.0:
         se = se.clone()
         se[:, :, TP] = se[:, :, TP] * (1.0 + (heavy_w - 1.0) * heavy.to(se.dtype))
@@ -156,6 +174,10 @@ def main(argv=None):
     ap.add_argument("--rain-head", default="none", choices=["none", "two_part"], help="RAIN-3 D4")
     ap.add_argument("--rain-bce", type=float, default=0.5, help="RAIN-3 weight of the rain/no-rain loss")
     ap.add_argument("--shock-loss", type=float, default=0.0, help="SHP-8 weight of the shock stability guard")
+    ap.add_argument("--noise-maps", type=int, default=0, help="V2-E8: per-pixel noise input maps (0 = off)")
+    ap.add_argument("--crps-members", type=int, default=2, help="V2-E8: members per sample for the afCRPS loss")
+    ap.add_argument("--crps-alpha", type=float, default=0.95, help="V2-E8: afCRPS alpha (1 = fair CRPS)")
+    ap.add_argument("--noise-seed", type=int, default=0, help="V2-E8: seed of the fixed serving noise")
     ap.add_argument("--weight-decay", type=float, default=None, help="default 1e-4, or 1e-3 with --latlon")
     ap.add_argument("--channel-weights", default="1,1,1,1,1,1")
     ap.add_argument("--seed", type=int, default=0)
@@ -166,6 +188,9 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.rain_head == "two_part" and a.rain != "sqrt":
         raise SystemExit("--rain-head two_part needs --rain sqrt (spec RAIN-3)")
+    if a.noise_maps > 0 and a.crps_members < 2:
+        raise SystemExit("--noise-maps needs --crps-members >= 2 (spec V2-E8)")
+    n_mem = a.crps_members if a.noise_maps > 0 else 1
 
     torch.manual_seed(a.seed); np.random.seed(a.seed); torch.set_num_threads(a.threads)
     dev = torch.device(a.device)
@@ -179,8 +204,10 @@ def main(argv=None):
     if a.rain_head == "two_part":
         rcfg["rain_head"] = "two_part"
         rcfg["rain_ref"] = {"mean": float(mean[TP]), "std": float(std[TP]), "anom_std": float(codec.anom_std[TP])}
+    if a.noise_maps > 0:                                              # V2-E8: serve member 0 of the fixed noise
+        rcfg["noise"] = {"maps": a.noise_maps, "seed": a.noise_seed, "members": 1, "train_members": n_mem}
     net_cfg = parse_net_config(a.net)
-    net = build_net(a.family, n_inputs(a.latlon), 7 if a.rain_head == "two_part" else 6, **net_cfg).to(dev)
+    net = build_net(a.family, n_inputs(a.latlon, a.noise_maps), 7 if a.rain_head == "two_part" else 6, **net_cfg).to(dev)
     n_par = sum(p.numel() for p in net.parameters())
     wd = a.weight_decay if a.weight_decay is not None else (1e-3 if a.latlon else 1e-4)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=wd)
@@ -192,7 +219,8 @@ def main(argv=None):
     ps = PhysScale(codec, dev) if a.shock_loss > 0 else None
     bce = torch.nn.BCEWithLogitsLoss()
     print(f"{a.family} {net_cfg} params={n_par:,} device={dev} rain={a.rain} curriculum={cur} "
-          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd}")
+          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd} "
+          f"noise_maps={a.noise_maps} crps_members={n_mem if a.noise_maps else 0}")
 
     best, out_path = float("inf"), ARTIFACTS / "models" / f"{a.name}.pt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -218,8 +246,17 @@ def main(argv=None):
             perm = np.random.permutation(tr_idx)
             for bi, i in enumerate(range(0, len(perm), a.batch)):
                 hist, cf, sc, true, heavy, wet = T.batch(perm[i:i + a.batch], unroll)
-                pred, logits = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="train", return_logits=True)
-                loss = loss_fn(pred, true, lat_w, ch_w, a.var_loss, a.spec_loss, heavy, a.heavy_weight)
+                noise = None
+                if a.noise_maps > 0:                                     # V2-E8: M members, fresh noise each
+                    rp = lambda x: x.repeat(n_mem, *([1] * (x.dim() - 1)))  # noqa: E731  member-major copies
+                    noise = torch.randn(n_mem * len(hist), unroll, a.noise_maps, NLAT, NLON, device=dev)
+                    pred, logits = rollout(net, rp(hist), rp(cf), rp(sc), T.fixed, unroll, rcfg, mode="train",
+                                           return_logits=True, noise=noise)
+                    wet = rp(wet)
+                else:
+                    pred, logits = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="train", return_logits=True)
+                loss = loss_fn(pred, true, lat_w, ch_w, a.var_loss, a.spec_loss, heavy, a.heavy_weight,
+                               n_mem, a.crps_alpha)
                 if logits is not None:                                   # RAIN-3: learn "will it rain?"
                     loss = loss + a.rain_bce * bce(logits, wet.to(logits.dtype))
                 if ps is not None and bi % 4 == 0:                       # SHP-8: every 4th batch
@@ -234,7 +271,7 @@ def main(argv=None):
             with torch.no_grad():
                 for i in range(0, len(va_idx), 128):
                     hist, cf, sc, true, _, _ = T.batch(va_idx[i:i + 128], unroll)
-                    pv = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="infer")
+                    pv = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="infer")   # V2-E8: served member 0
                     vl += loss_fn(pv, true, lat_w, ch_w).item() * len(hist)          # plain MSE, inference mode
             vl /= len(va_idx)
             print(f"ep {ep:3d} unroll {unroll}  train {tot / len(tr_idx):.4f}  val {vl:.4f}  {time.time() - t0:.0f}s", flush=True)

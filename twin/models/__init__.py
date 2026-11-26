@@ -3,7 +3,7 @@
 Spec examples:
   {"model": "persistence"}
   {"model": "damped_anomaly"}
-  {"model": "neural", "checkpoint": "models/cnn_base.pt"}
+  {"model": "neural", "checkpoint": "models/cnn_base.pt"}              (+ "members": n for noise-input nets, V2-E8)
   {"model": "lgbm", "dir": "lgbm/lgbm_base"}
   {"model": "post", "base": {...}, "file": "post/cnn_r2.npz"}            (+ optional "blend"/"rescale"/"rainmap": bool)
   {"model": "ensemble", "members": [{...}, {...}], "weights": [0.5, 0.5], "restore_variance": true}
@@ -31,7 +31,7 @@ def build_model(spec: dict) -> TwinModel:
         return DampedAnomaly()
     if kind == "neural":
         from .neural import NeuralModel
-        return NeuralModel(spec["checkpoint"])
+        return NeuralModel(spec["checkpoint"], spec.get("members"))
     if kind == "lgbm":
         from .lgbm import LGBMModel
         return LGBMModel(spec["dir"])
