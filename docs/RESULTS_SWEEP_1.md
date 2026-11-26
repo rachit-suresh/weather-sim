@@ -25,6 +25,7 @@ Regenerate: `python -m training.report --prefix sweep_`
 | hybrid:sweep_hybrid | 59.86 | 63.47 | True | 0.1378 | 0.0462 | 9.42 | 13.5 | 46.1 | 0.94 | 10.42 | 3.17 | 19.39 |
 | physics:sweep_physics | 59.71 | 59.99 | True | 0.1484 | 0.0441 | 9.59 | 13.5 | 91.9 | 2.74 | 7.07 | 5.91 | 14.12 |
 | vit:sweep_vit | 57.06 | 62.29 | True | 0.1365 | 0.0323 | 9.46 | 12.75 | 130.5 | 1.67 | 14.21 | 5.44 | 23.37 |
+| convgru:sweep_convgru | 58.19 | 61.43 | True | 0.1286 | 0.0408 | 9.32 | 12.75 | 30.7 | 2.19 | 7.07 | 5.0 | 17.57 |
 | lgbm:sweep_lgbm | 53.19 | 50.68 | True | 0.1154 | 0.0251 | 9.32 | 11.25 | 589.6 | 1.41 | 1.41 | 2.77 | 5.66 |
 
 Baseline for comparison: damped anomaly persistence = 43.7 (events) / 42.3 (random), reach 0.
@@ -59,6 +60,7 @@ Baseline for comparison: damped anomaly persistence = 43.7 (events) / 42.3 (rand
    these numbers more than the choice of family.
 
 ## Not finished in this session (laptop shutdown)
-- ConvGRU (time series) and the light graph network (width 48, 4 rounds) did not finish.
+- ConvGRU finished just before shutdown: 58.2 / 61.4, mid-pack; memory across days did not help with the plain
+  recipe. The light graph network (width 48, 4 rounds) did not finish.
   Resume: `bash scripts/resume_sweep.sh <python>`.
 - FNO was a control experiment (expected to fail locality).
