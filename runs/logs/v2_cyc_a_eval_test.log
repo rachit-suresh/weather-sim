@@ -1,0 +1,7 @@
+cyclone_mode_A:r3_cnn+v2_e7c [test]  auto(events)=68.12/70  auto(random)=67.65/70  gate=True
+  named real events: auto=68.12/70  ['cyclone_amphan', 'cyclone_nisarga', 'cyclone_tauktae', 'cyclone_yaas']
+  events SS=0.166 (30.0/30)  CSI-skill=0.108 (15.0/15)  blur=10.0/10 ratios=[0.9419999718666077, 0.5080000162124634, 0.9869999885559082, 0.8119999766349792, 0.9860000014305115, 0.906000018119812]  100 ms
+  random SS=0.118 (29.5/30)  CSI-skill=0.105 (15.0/15)  blur=10.0/10 ratios=[0.9950000047683716, 0.9620000123977661, 0.8550000190734863, 0.7900000214576721, 0.8759999871253967, 0.9520000219345093]  105 ms
+  named  SS=0.197 (30.0/30)  CSI-skill=0.162 (15.0/15)  blur=10.0/10 ratios=[0.9589999914169312, 0.7269999980926514, 0.9829999804496765, 0.7749999761581421, 0.8999999761581421, 0.9589999914169312]  250 ms
+  shocks causality=13.12/15  windows={'monsoon_onset': 5624, 'heavy_rain': 5692, 'heatwave': 5621, 'cyclone': 5615, 'winter_disturbance': 5488}
+  spread of a 1-cell shock (cells): {'r95_day1': 1.88, 'rmax_day1': 9.67, 'r95_day4': 4.79, 'rmax_day4': 21.11}

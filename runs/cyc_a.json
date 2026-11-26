@@ -1,0 +1,1 @@
+{"model": "cyclone_mode", "base": "models/r3_cnn.pt", "mover": "models/v2_e7c.pt", "variant": "A"}

@@ -7,6 +7,7 @@ Spec examples:
   {"model": "lgbm", "dir": "lgbm/lgbm_base"}
   {"model": "post", "base": {...}, "file": "post/cnn_r2.npz"}            (+ optional "blend"/"rescale"/"rainmap": bool)
   {"model": "ensemble", "members": [{...}, {...}], "weights": [0.5, 0.5], "restore_variance": true}
+  {"model": "cyclone_mode", "base": "models/r3_cnn.pt", "mover": "models/v2_e7c.pt", "variant": "A"}   (V2-CYC)
 """
 from __future__ import annotations
 
@@ -43,6 +44,9 @@ def build_model(spec: dict) -> TwinModel:
         from .ensemble import BlendEnsemble
         return BlendEnsemble([build_model(m) for m in spec["members"]], spec.get("weights"),
                              spec.get("restore_variance", False))
+    if kind == "cyclone_mode":
+        from .cyclone import THRESHOLD_PA, CycloneMode
+        return CycloneMode(spec["base"], spec["mover"], spec.get("variant", "A"), spec.get("threshold_pa", THRESHOLD_PA))
     raise ValueError(f"unknown model kind {kind!r}")
 
 

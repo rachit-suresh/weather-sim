@@ -234,10 +234,62 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   by summing its 3x3 taps). Bound = sqrt 2 x 7 + 2.5 = 12.40 <= 13. Fine-tune: curriculum `4:2,8:2`, lr 3e-4, 6 threads.
   **Result: does not win** (`docs/v2/RESULTS_E7.md`): reach guarantee met (bound 12.40, measured rmax 8.72 / 8.81),
   Fani landfall latitude exact, val mean 67.30 (-0.62), test mean 66.28 (-1.68), shocks 12.38 < 13.12.
+- `V2-CYC` Cyclone mode (serving-time combination, NO training): `r3_cnn` everywhere, except in a moving circle around
+  a detected cyclone, where `v2_e7c` (which moves lows) is used. Branch `v2/cyclone-mode`.
+  (a) **Detector.** Input: ONLY the unperturbed `init_states` of the request (before the perturbation is added; clamped
+  like the model input), last input day. Anomaly a = msl - climatology msl (shipped climatology, day of the last input
+  day). Basin cells = sea cells (static `land_sea_mask` < 0.5) with lat <= 24N and either lon 80-97E (Bay of Bengal,
+  Andaman Sea) or lon <= 77E (Arabian Sea). Fires iff min over basin cells of a < -THR. Start centre c0 = that argmin
+  cell.
+  (b) **Threshold rule.** THR = 98th percentile, over all TRAINING days (2005-2017) of the basin minimum -min(a), i.e. the
+  detector fires on the deepest 2% of training days (~7 days/year, the order of the yearly count of cyclone and deep
+  depression days over the two basins). Computed by `training/cyclone_calib.py`; val and test years are never used to
+  set it (only to report how often it fires). The value is written into the serving code as a constant.
+  (c) **Track** (revision 2, see change log). Run `v2_e7c` with ZERO perturbation on the unperturbed states for the
+  requested steps. Day k centre c_k = argmin of its msl anomaly (vs climatology of day k) over all cells (land allowed:
+  landfall) within 7 cells (Euclidean) of c_{k-1}: about 780 km/day (~32 km/h), above the translation speed of nearly
+  all North Indian Ocean cyclones, because `v2_e7c` does not always carry the low within its 2.5 cells/day transport
+  cap (it can fill the low and rebuild it several cells away). If that minimum is weaker than -LOST the track is lost:
+  c_k = c_{k-1} for that and every later day. LOST = median over TRAINING days of the basin minimum -min(a) (an
+  ordinary day's deepest basin low, `cyclone_calib.py`). Check on the training episodes only (`cyclone_calib.py
+  --tracker`): mean mask weight at e7c's low / the true low, days 1-3.
+  (d) **Mask.** w(d) = 1 for d <= R, 0.5 (1 + cos(pi (d - R) / T)) for R < d < R + T, 0 beyond, with R = 4 and T = 2
+  cells. Day-k mask m_k(x) = max over j = 0..k of w(|x - c_j|) (the swath of the track so far, start included).
+  The swath is required because `r3_cnn` keeps the low at c0: a circle that left c0 would leave r3's stale low as a
+  second low. R by reasoning on the training composite of detected lows (`cyclone_calib.py`): msl anomaly halves at
+  ~3 cells, wind-speed anomaly peaks at 2 cells and halves by 5-6 cells, so full weight to 4 and zero from 6 cells.
+  The same mask serves the shocked and the unshocked request, so it never depends on the perturbation.
+  (e) **Output.** o = m * e7c(shocked) + (1 - m) * r3(shocked) on the channel set S, o = r3(shocked) on the others.
+  Variant **A**: S = {u10, v10, msl} (r3's t2m, tp, tcwv kept: avoids e7c's warm_ocean rain overshoot). Variant **B**:
+  S = all 6 channels. If the detector does not fire, o = `r3_cnn` bit for bit (e7c is not run). The mask is fixed per
+  request, so the null test stays exact and the day-1 reach is at most max(r3 9.9, e7c 8.8) cells.
+  (f) **Serving.** Model kind `"cyclone_mode"`: `{"model": "cyclone_mode", "base": "models/r3_cnn.pt", "mover":
+  "models/v2_e7c.pt", "variant": "A"}`. The engine passes the unperturbed states to every model
+  (`TwinModel.rollout_shocked`; models that do not need them ignore them). `artifacts/active.json` is not changed.
+  (g) **Win rule.** `V2-WIN` against `r3_cnn`. Target "beyond noise" (the `V2-E7` spec gap) made concrete: Fani mean
+  centre error over days 1-3 at least one grid cell (111 km) lower than r3_cnn's 468 km AND |landfall-latitude error|
+  not larger than r3_cnn's 2.0. Val and test auto means (mean of events / random / named) not lower than r3_cnn's by
+  more than 0.2; shocks val and test not lower than 13.12. Guards as in `V2-WIN` (null exact, reach <= 11, rollout
+  < 1 s, repo scan 15/15, `tests/test_engine.py` passes with the cyclone-mode spec). Amphan is report-only.
+  **Result: both variants win, A preferred** (`docs/v2/RESULTS_CYC.md`): THR 9.18 hPa, LOST 1.92 hPa; fires on 2.0 /
+  2.9 / 2.5% of train / val / test days and only on the `cyclone` event windows, Fani, Amphan, Tauktae, Yaas and 1 val
+  random window. A: val / test means 67.92 / 67.96 (= r3_cnn), shocks 13.12, Fani 350/0/607 km (mean 319 vs 468),
+  landfall latitude exact, reach 9.90, worst rollout 548 ms. B: val 67.91, same otherwise, but inherits e7c's
+  warm_ocean rain overshoot inside the mask (Fani 8.26 vs 6.42 std; not on a scored window).
 - `V2-E8` Fixed-seed CRPS residual head: per-pixel noise from a fixed seed independent of the input, 2-4 members in
   training with almost-fair CRPS, serve one fixed member. Target: sharpness and csi_skill; determinism must hold.
 
 ## Change log
+
+- v2 cyclone mode (2026-11-27): `V2-CYC` added: r3_cnn + v2_e7c combined by a perturbation-independent cyclone mask
+  (detector, training-only threshold, track, swath mask, variants A/B, win rule). Spec gap in `V2-WIN` closed for this
+  experiment: "beyond noise" for the Fani track = mean days 1-3 error at least 111 km lower.
+  Revision 2 (same day, before any scoring): spec error in `V2-CYC` (c). The tracker (4-cell search, lost below
+  THR/2) assumed `v2_e7c` carries the low within its 2.5 cells/day cap. On Fani (val, diagnostic only) e7c fills the
+  low and rebuilds a weaker (-5 hPa) broad low 6.7 cells north on day 2, so the track was lost on day 2 and the
+  output was r3's. New rule: 7-cell search (physical upper bound on daily translation) and LOST = training median
+  basin minimum. Chosen on the 43 training episodes (mask weight at e7c's low 0.79 -> 0.84, at the true low
+  0.79 -> 0.89), not on val or test scores.
 
 - v2 E7c (2026-11-27): `V2-E7c` added. E7b's 1x1 reaction blocks plus the shock guard cost heavy-rain CSI and the
   protocol needs one change at a time, so E7c changes only the locality design (bound <= 13, measured rmax <= 10).

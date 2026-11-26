@@ -1,0 +1,16 @@
+{
+ "time": "2026-11-27T02:43:53",
+ "tag": "v2_cyc_a",
+ "model": "cyclone_mode_A:r3_cnn+v2_e7c",
+ "fani_err_km_d1": 350,
+ "fani_err_km_d2": 0,
+ "fani_err_km_d3": 607,
+ "fani_landfall_lat_err": 0.0,
+ "amphan_err_km_d2_TESTONLY": 104,
+ "amphan_landfall_lat_err_TESTONLY": 0.0,
+ "mean_rain_change_mm": -1.289,
+ "share_negative": 0.92,
+ "edge_rmse_std": 0.4415,
+ "interior_rmse_std": 0.5033,
+ "ms_per_rollout": 109.3
+}

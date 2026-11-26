@@ -20,5 +20,10 @@ class TwinModel(ABC):
     def rollout(self, init_states: np.ndarray, doy: float, steps: int) -> np.ndarray:
         ...
 
+    def rollout_shocked(self, init_states: np.ndarray, base_states: np.ndarray, doy: float, steps: int) -> np.ndarray:
+        """`init_states` with the shock added, `base_states` = the same request before the shock (spec V2-CYC f).
+        Models whose behaviour depends on the unshocked states (cyclone mode) override this; others ignore it."""
+        return self.rollout(init_states, doy, steps)
+
     def warmup(self) -> None:
         """Optional: run once at start-up (JIT, thread pools) so scored calls are fast."""

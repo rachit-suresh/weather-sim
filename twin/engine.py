@@ -44,6 +44,7 @@ class Engine:
         steps = int(steps)
         if not 1 <= steps <= MAX_STEPS:
             raise ValueError(f"steps must be in 1..{MAX_STEPS}")
+        base = clamp_state(init.copy())                    # unshocked states (spec V2-CYC f)
         init = init.copy()
         if pert is not None:
             init[-1] = init[-1] + pert                      # the shock is a physical delta on the last input day
@@ -51,7 +52,7 @@ class Engine:
         doy = doy_from_sincos(doy_sincos)
         t0 = time.perf_counter()
         try:
-            out = clean_output(self.model.rollout(init, doy, steps), steps)
+            out = clean_output(self.model.rollout_shocked(init, base, doy, steps), steps)
             if not np.isfinite(out).all():
                 raise FloatingPointError("non-finite rollout")
         except Exception as e:                              # never lose a window to a crash
