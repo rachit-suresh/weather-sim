@@ -175,6 +175,9 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   "View" dropdown; (d) the daily chart is folded under the slider; (e) a "?" button opens a short how-it-works modal;
   (f) scenario labels are plain ("Monsoon onset, 13 May 2020"); run id and latency move into the model badge tooltip;
   (g) view names stay Prime / Branched / Diff (team choice); every existing feature stays reachable.
+  (h) backdrop behind the map (team choice "explorer's chart"): aged parchment with paper grain and vignette, faint
+  graticule, portolan rhumb lines from a compass rose, a few pixel doodles (ship, sea serpent, whale) and a
+  "Here be monsoons" cartouche; low contrast, static, drawn as one SVG layer under both map views.
 ## 12. Plan (updated in 1.1)
 
 - **Run 2 (now):** families CNN, U-Net, CNN+transformer hybrid, physics hybrid, ConvGRU with `REP-*`, `ROL-1..2`,

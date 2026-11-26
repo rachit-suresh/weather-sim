@@ -14,6 +14,7 @@ import TimelineDeck from "@/components/TimelineDeck";
 import MapLegend from "@/components/MapLegend";
 import ViewMenu from "@/components/ViewMenu";
 import HelpModal from "@/components/HelpModal";
+import ChartBackdrop from "@/components/ChartBackdrop";
 import { PixelTabs } from "@/components/ui";
 import { useMultiverse } from "@/state/useMultiverse";
 import { computeLens, lensById } from "@/lib/impact";
@@ -112,6 +113,7 @@ export default function App() {
         {/* ── centre: globe or flat map + timeline ── */}
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
+            <ChartBackdrop />
             {/* toolbar */}
             <div className="pointer-events-none absolute inset-x-2 top-2 z-20 flex flex-wrap items-start justify-between gap-2">
               <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">

@@ -1470,7 +1470,8 @@ export default function GlobeView(props: Props) {
       ref={wrapRef}
       className="relative h-full w-full scanlines select-none"
       style={{
-        background: "radial-gradient(circle at 50% 48%, #f8f1dc 0%, #f3e9cf 56%, #e7d8b0 100%)",
+        // soft halo only: the explorer's-chart backdrop (spec IMP-4h) shows around it
+        background: "radial-gradient(circle at 50% 48%, rgba(248,241,220,0.75) 0%, rgba(248,241,220,0.35) 38%, rgba(243,233,207,0) 62%)",
       }}
     >
       <canvas
