@@ -79,6 +79,11 @@ Amphan (2020, test year) is reported in each branch's results but never used to 
 
 ## Follow-ups (decided autonomously; results appended below when done)
 
-- **E2b**: soft-CSI loss alone, no bias guard (the second setting V2-E2 allows). Branch `v2/e2-softcsi`.
+- **E2b**: soft-CSI loss alone, no bias guard (the second setting V2-E2 allows). Branch `v2/e2-softcsi` (5b07650).
+  **Loses.** Val 68.00 / 68.12 / 68.12, mean 68.08 (+0.16); test 67.75 / 65.73 / 67.75, mean 67.08 (-0.88); shocks
+  13.12 / 12.75. csi_skill val 0.100 / 0.110, test 0.105 / 0.101 (within noise / lower). Raw heavy-rain CSI stayed within
+  +-0.006 of the baseline: without the guard the loss only raised the over-forecast ratio (1.09-1.52 -> 1.16-1.65), which
+  fills the capped CSI points on val but costs RMSE on test random (ss 0.118 -> 0.112). Fani landfall lat -6.0; wind-shock
+  rain -1.10 mm (75%). E2 is closed (both allowed settings used).
 - **E7b**: E7 with a day-1 reach budget of at most 10 cells by construction plus a targeted shock-stability fix, warm-started from `v2_e7`. Branch `v2/e7-advect-correct`.
 - Not repeated: E4, E5, E6, E8 (failure is in the method for our scoring, not the setting).
