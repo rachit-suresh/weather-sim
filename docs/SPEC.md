@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.2 (2026-11-26). **Status:** active.
+**Version:** 1.3 (2026-11-26). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -136,7 +136,11 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - **Phase 2a, screening:** U-Net (best mean) trained 4 times with the run 2 recipe plus ONE option each:
   F4 edge relax, F6 lat/lon, D4 two-part rain, SHP-8 shock guard. An option WINS if, versus `r2_unet`, the mean of
   the three validation auto scores (events, random, named) rises by >= 0.5 and shocks do not fall.
-- **Phase 2b, run 3:** all 5 families (U-Net, hybrid, ConvGRU, CNN, physics) with the run 2 recipe + all winning options.
+- **Phase 2a: done.** Versus r2_unet (mean 66.51, shocks 13.12): D4 two-part rain head with straight-through gate
+  67.21 / 13.88 -> **WINS**; edge relax 66.98 / 13.12 (+0.47, just under the bar); lat/lon 66.87 / 13.12;
+  shock guard 66.07 / 13.12. None of the edge options fixed the Arabian Sea "spreads outward" check.
+- **Phase 2b, run 3:** all 5 families (U-Net, hybrid, ConvGRU, CNN, physics) with the run 2 recipe + `RAIN-3`
+  (`--rain-head two_part`). Tags `r3_<family>`.
 - **Phase 2c:** ensembles of the best models (equal-weight average, and with `restore_variance`), and
   `SHP-6` CRPS ensemble (E3) on the best family.
 - **Phase 3:** `VAL-4` final retrain, `RUN-1` ONNX chain, brief.
@@ -156,3 +160,4 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.2 (2026-11-26): spec error in `RAIN-3`: soft gate in training but hard gate at inference made the forecast
   rain too high and the 10-day rollout drift (screening run p2_unet_d4: raw 38/22/40 vs 63/68/68). Now the hard gate
   is used in both, with straight-through gradients. D4 screening is rerun as p2_unet_d4st.
+- 1.3 (2026-11-26): phase 2a results recorded; run 3 = run 2 recipe + `RAIN-3` on all 5 families.
