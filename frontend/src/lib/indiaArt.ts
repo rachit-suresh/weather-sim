@@ -304,3 +304,32 @@ export function getIndiaArt(): IndiaArt {
   cached = { canvas, rgba, kind };
   return cached;
 }
+
+let cachedOutline: HTMLCanvasElement | null = null;
+
+/** Ink outline of the art map (coast + dotted India border), drawn over the forecast when the art is dimmed (spec IMP-3g). */
+export function getIndiaOutline(): HTMLCanvasElement {
+  if (cachedOutline) return cachedOutline;
+  const { kind } = getIndiaArt();
+  const W = ART_W, H = ART_H;
+  const px = new Uint8ClampedArray(W * H * 4);
+  const at = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? -1 : kind[y * W + x]);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const k = kind[y * W + x];
+      if (k === 0) continue;
+      const n = [at(x + 1, y), at(x - 1, y), at(x, y + 1), at(x, y - 1)];
+      let a = 0;
+      if (n.includes(0)) a = 235;                                          // coast
+      else if (k === 2 && n.includes(1) && ((x + y) & 1) === 0) a = 190;  // India border, dotted
+      if (!a) continue;
+      const o = (y * W + x) * 4;
+      px[o] = 122; px[o + 1] = 47; px[o + 2] = 31; px[o + 3] = a;
+    }
+  }
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  c.getContext("2d")!.putImageData(new ImageData(px, W, H), 0, 0);
+  cachedOutline = c;
+  return c;
+}

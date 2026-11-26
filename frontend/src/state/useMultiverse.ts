@@ -157,6 +157,7 @@ export function useMultiverse() {
   const [showWind, setShowWind] = useState(true);
   const [showCities, setShowCities] = useState(true);
   const [showScenery, setShowScenery] = useState(true);
+  const [weatherFocus, setWeatherFocus] = useState(0); // spec IMP-3g
   const [focusRegion, setFocusRegion] = useState<string | null>(null);
 
   const [modelName, setModelName] = useState("—");
@@ -583,7 +584,7 @@ export function useMultiverse() {
     brushRadius, setBrushRadius, painted, onPaint, onPaintEnd, clearPaint, commitPaintedToQueue,
     queue, addPreset, removeShock, addJudgePreset, removeJudgePreset, perturbationCount,
     run, reset, selected, selectCell, ripples, addRipple,
-    showWind, setShowWind, showCities, setShowCities, showScenery, setShowScenery, focusRegion, setFocusRegion,
+    showWind, setShowWind, showCities, setShowCities, showScenery, setShowScenery, weatherFocus, setWeatherFocus, focusRegion, setFocusRegion,
     modelName, online, diverged, missionStage,
   };
 }

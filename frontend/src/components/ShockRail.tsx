@@ -281,6 +281,27 @@ export default function ShockRail({ m }: { m: Multiverse }) {
             <ToggleChip active={m.showScenery} onClick={() => m.setShowScenery(!m.showScenery)} icon={Sparkles} accent="var(--color-safe)">STORYBOOK</ToggleChip>
           </span>
         </div>
+        {/* spec IMP-3g: dull the art map and bring the forecast colours to full strength */}
+        <label
+          className={`mt-2 block ${m.showScenery ? "" : "opacity-40"}`}
+          title="Fade the map art and show the forecast colours at full strength. Works in Storybook mode."
+        >
+          <span className="flex items-center justify-between font-pixel text-[8px] text-ink-faint">
+            <span>WEATHER FOCUS</span>
+            <span className="font-mono text-[10px] text-ink">{Math.round(m.weatherFocus * 100)}%</span>
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={m.weatherFocus}
+            disabled={!m.showScenery}
+            onChange={(e) => m.setWeatherFocus(Number(e.target.value))}
+            aria-label="Weather focus"
+            className="mt-1 w-full cursor-pointer accent-[var(--color-prime)] disabled:cursor-not-allowed"
+          />
+        </label>
         <label className="mt-2 block">
           <span className="font-pixel text-[8px] text-ink-faint">FOCUS REGION</span>
           <select

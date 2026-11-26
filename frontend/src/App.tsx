@@ -182,6 +182,7 @@ export default function App() {
                     showWind={m.showWind}
                     showCities={m.showCities}
                     showScenery={m.showScenery}
+                    weatherFocus={m.weatherFocus}
                     running={m.running}
                     focusRegion={m.focusRegion}
                     onSwitchToFlatMap={switchToFlat}
@@ -215,6 +216,7 @@ export default function App() {
                     showWind={m.showWind}
                     showCities={m.showCities}
                     showScenery={m.showScenery}
+                    weatherFocus={m.weatherFocus}
                     running={m.running}
                     focusRegion={m.focusRegion}
                   />

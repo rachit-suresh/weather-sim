@@ -13,7 +13,7 @@ import {
   PAPER, TERRAIN, cellHash, stamp, computeTargetField,
   colorForFieldValue, brushCellsAround, drawPixelSun, drawCompassRose, drawPixelSonarRipple, storyAlpha,
 } from "@/lib/mapSprites";
-import { getIndiaArt } from "@/lib/indiaArt";
+import { getIndiaArt, getIndiaOutline } from "@/lib/indiaArt";
 import type { LensId, LensOutput } from "@/lib/impact";
 
 export type ViewMode = "prime" | "branched" | "diff";
@@ -39,6 +39,7 @@ interface Props {
   showWind: boolean;
   showCities: boolean;
   showScenery: boolean;
+  weatherFocus?: number;
   running: boolean;
   focusRegion: string | null;
 }
@@ -251,6 +252,12 @@ export default function PixelGrid(props: Props) {
         ctx.imageSmoothingEnabled = false;
         ctx.drawImage(getIndiaArt().canvas, ox, oy, NC * cell, NR * cell);
       }
+      // spec IMP-3g: weather focus fades the art toward paper (up to 60%) and lifts every tint toward 0.85
+      const wf = story ? Math.min(1, Math.max(0, p.weatherFocus ?? 0)) : 0;
+      if (wf > 0) {
+        ctx.fillStyle = rgbCss(PAPER, 0.6 * wf);
+        ctx.fillRect(ox, oy, NC * cell, NR * cell);
+      }
 
       let focusSet: Set<number> | null = null;
       if (p.focusRegion) {
@@ -281,7 +288,8 @@ export default function PixelGrid(props: Props) {
 
           if (p.timeline) {
             const col = colorFor(disp[i]);
-            const a = !story ? 1 : storyAlpha(disp[i], scaleRef.current.v, p.view, p.variable, p.lens, mask);
+            let a = !story ? 1 : storyAlpha(disp[i], scaleRef.current.v, p.view, p.variable, p.lens, mask);
+            if (wf > 0) a += (0.85 - a) * wf;
             if (a > 0.01) {
               ctx.fillStyle = rgbCss(col, a);
               // storybook tint covers the whole cell (no grid gaps) so the art reads as one landscape
@@ -313,6 +321,22 @@ export default function PixelGrid(props: Props) {
             }
           }
         }
+      }
+
+      // spec IMP-3f: faint 32 x 36 cell grid over the art so the forecast cells stay visible
+      if (story && cell >= 4) {
+        ctx.fillStyle = `rgba(62,42,24,${0.13 + 0.07 * wf})`;
+        const gw = NC * cell, gh = NR * cell;
+        for (let c = 0; c <= NC; c++) ctx.fillRect(Math.round(ox + c * cell) - 0.5, oy, 1, gh);
+        for (let r = 0; r <= NR; r++) ctx.fillRect(ox, Math.round(oy + r * cell) - 0.5, gw, 1);
+      }
+      // spec IMP-3g: as the art fades, ink the coast and India border back in so the geography stays readable
+      if (wf > 0) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, wf * 1.4);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(getIndiaOutline(), ox, oy, NC * cell, NR * cell);
+        ctx.restore();
       }
 
       if (!story && p.showScenery && cell >= 7) {

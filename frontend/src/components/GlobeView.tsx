@@ -51,6 +51,7 @@ interface Props {
   showWind: boolean;
   showCities: boolean;
   showScenery: boolean;
+  weatherFocus?: number;
   running: boolean;
   focusRegion: string | null;
   onSwitchToFlatMap: () => void;
@@ -416,6 +417,9 @@ export default function GlobeView(props: Props) {
     const u32 = new Uint32Array(imgData.data.buffer);
     // landFlags per quantized pixel: -1 = outside sphere, 0 = ocean, 1 = foreign/world land, 2 = India land
     const landFlags = new Int8Array(bufW * bufH);
+    // spec IMP-3f: forecast cell index per pixel (-1 = outside the grid) and grid-line weight (edge melt), for the cell grid
+    const cellBuf = new Int16Array(bufW * bufH);
+    const gridW = new Uint8Array(bufW * bufH);
 
     // Pre-seed celestial chart stars (deterministic)
     const stars: { x: number; y: number; s: number; phase: number; cross: boolean }[] = [];
@@ -488,12 +492,17 @@ export default function GlobeView(props: Props) {
 
       u32.fill(0);
       landFlags.fill(-1);
+      cellBuf.fill(-1);
 
       const pulseSin = 0.55 + 0.45 * Math.sin(tick * 0.08);
       // Storybook mode (spec IMP-3c): India grid pixels come from the pixel-art India map
       const story = p.showScenery;
       const art = story ? getIndiaArt() : null;
       const showGridJoints = indiaPxPerDeg >= 9.0 && !story;
+      // spec IMP-3f/g: faint cell grid over the art (one buffer pixel wide) and the weather-focus dimming
+      const wf = story ? Math.min(1, Math.max(0, p.weatherFocus ?? 0)) : 0;
+      const storyGrid = story && indiaPxPerDeg >= 4 * PIXEL_STEP;
+      const gridDark = 0.9 - 0.06 * wf;
 
       // ── Pass 1: Conformal Möbius + Orthographic pixel-art sphere shader ───
       for (let py = minPy; py <= maxPy; py++) {
@@ -549,11 +558,16 @@ export default function GlobeView(props: Props) {
               artKind = art.kind[ai];
               rCol = art.rgba[ai * 4]; gCol = art.rgba[ai * 4 + 1]; bCol = art.rgba[ai * 4 + 2];
               // melt the rectangular art map into the world globe near the grid edge (India itself never fades)
+              let f = 1;
               if (artKind !== 2) {
                 const edgeDeg = Math.min(latDeg - 6.0, 38.0 - latDeg, lonDeg - 65.0, 101.0 - lonDeg);
-                const f = Math.max(0, Math.min(1, edgeDeg / 3.5));
+                f = Math.max(0, Math.min(1, edgeDeg / 3.5));
                 const [wr, wg, wbCol] = WORLD_RGB[sampleWorldBiome(latDeg, lonDeg)];
                 rCol = wr + (rCol - wr) * f; gCol = wg + (gCol - wg) * f; bCol = wbCol + (bCol - wbCol) * f;
+              }
+              if (wf > 0) {
+                const d = 0.6 * wf * f; // fade the art toward paper; follows the edge melt so no box edge appears
+                rCol += (PAPER[0] - rCol) * d; gCol += (PAPER[1] - gCol) * d; bCol += (PAPER[2] - bCol) * d;
               }
             } else if (mask === 1) {
               const wb = sampleWorldBiome(latDeg, lonDeg);
@@ -585,6 +599,7 @@ export default function GlobeView(props: Props) {
                 const mag = Math.min(1, Math.abs(rawVal) / (scaleV || 1));
                 a *= mag <= 0.04 ? 0 : Math.min(1, (mag - 0.04) * 3.0);
               }
+              if (wf > 0) a += (0.85 - a) * wf;
               a *= edgeFade;
               rCol = rCol * (1 - a) + col[0] * a;
               gCol = gCol * (1 - a) + col[1] * a;
@@ -613,6 +628,12 @@ export default function GlobeView(props: Props) {
               } else if (fy < 0.10 || fx < 0.10) {
                 rCol *= 0.92; gCol *= 0.92; bCol *= 0.92;
               }
+            }
+
+            if (storyGrid) {
+              cellBuf[bi] = ci;
+              const edgeDeg = Math.min(latDeg - 6.0, 38.0 - latDeg, lonDeg - 65.0, 101.0 - lonDeg);
+              gridW[bi] = mask === 2 ? 255 : Math.round(255 * Math.max(0, Math.min(1, edgeDeg / 3.5)));
             }
 
             if (focusSet && !focusSet.has(ci)) {
@@ -706,6 +727,24 @@ export default function GlobeView(props: Props) {
               255,
             );
             landFlags[bi] = wb === 0 ? 0 : 1;
+          }
+        }
+      }
+
+      // ── Pass 1b (spec IMP-3f): faint 1-pixel cell grid where the forecast cell changes from the left/upper pixel ─
+      if (storyGrid) {
+        for (let py = Math.max(1, minPy); py <= maxPy; py++) {
+          const rowOff = py * bufW;
+          for (let px = Math.max(1, minPx); px <= maxPx; px++) {
+            const bi = rowOff + px;
+            const ci = cellBuf[bi];
+            if (ci < 0) continue;
+            const lf = cellBuf[bi - 1], up = cellBuf[bi - bufW];
+            if ((lf >= 0 && lf !== ci) || (up >= 0 && up !== ci)) {
+              const k = 1 - (1 - gridDark) * (gridW[bi] / 255);
+              const v = u32[bi];
+              u32[bi] = packRgba(((v & 255) * k) | 0, (((v >>> 8) & 255) * k) | 0, (((v >>> 16) & 255) * k) | 0, 255);
+            }
           }
         }
       }

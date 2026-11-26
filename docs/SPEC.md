@@ -144,7 +144,11 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   (b) flat map draws the art map directly; (c) globe magnifies India 5x (focus warp k = 5, was 2.65) and samples the
   art map inside the grid; (d) "Storybook" overlay (default): translucent pixel tint of the forecast field plus weather
   sprites (clouds/rain where wet, sun where hot, wind arrows); "Data" toggle restores the full colour field;
-  (e) no new network dependencies, no change to the server API, rollout must stay live (`IMP-2`).
+  (e) no new network dependencies, no change to the server API, rollout must stay live (`IMP-2`);
+  (f) a faint 32 x 36 cell grid is drawn over the art map (flat and globe) so the forecast cells stay visible;
+  (g) "Weather focus" slider w in [0, 1] (default 0): the art is faded toward paper by up to 60% and the forecast tint
+  opacity moves from the storybook value to 0.85 for every cell, so a demo can dull the background and show the weather;
+  the coast and India border are inked over the forecast (fading in with w) so the geography stays readable.
 ## 12. Plan (updated in 1.1)
 
 - **Run 2 (now):** families CNN, U-Net, CNN+transformer hybrid, physics hybrid, ConvGRU with `REP-*`, `ROL-1..2`,
@@ -200,6 +204,7 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
 - 1.6 (2026-11-26): D4 + edge relax wins the screening; run 3b adds it to the other 4 families.
 - 1.12 (2026-11-26): `IMP-3` art style v2 (pixel-art India map, 5x globe focus, storybook overlay), team-approved plan.
+  Amended on the branch: `IMP-3f` faint cell grid, `IMP-3g` weather-focus slider (team request).
 - 1.11 (2026-11-26): phase 2d result recorded: no blend replaces r3_cnn.
 - 1.10 (2026-11-26): phase 2d CNN + physics blend experiment and its acceptance rule.
 - 1.9 (2026-11-26): spec error: `IMP-1` described a rain-deficit crop panel, but the team's merged dashboard implements
