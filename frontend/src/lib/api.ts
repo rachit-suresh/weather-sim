@@ -220,16 +220,9 @@ export function buildPerturbationTensor(
     }
   }
 
-  let hasNonZero = false;
-  for (let ch = 0; ch < 6 && !hasNonZero; ch++) {
-    for (let r = 0; r < NR && !hasNonZero; r++) {
-      for (let c = 0; c < NC; c++) {
-        if (Math.abs(tensor[ch][r][c]) > 1e-12) { hasNonZero = true; break; }
-      }
-    }
-  }
-
-  return { tensor: hasNonZero ? tensor : null, affectedCells: touched.size };
+  // Armed shocks always send a real [6][32][36] tensor, even when it is all zeros: that is how the
+  // "Zero Shock (Sanity Check)" preset proves live that a zero perturbation changes nothing.
+  return { tensor, affectedCells: touched.size };
 }
 
 function packRollout(rollout: number[][][][], steps: number): Record<VarKey, Float32Array> {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Activity, Radio, Satellite, Zap, Settings2, Check, X } from "lucide-react";
+import { Activity, Radio, Satellite, Cpu, Settings2, Check, X } from "lucide-react";
 import GlitchText from "@/components/kokonutui/glitch-text";
 import type { Multiverse } from "@/state/useMultiverse";
 
@@ -36,10 +36,17 @@ export default function HeaderBar({ m }: { m: Multiverse }) {
       <div className="mx-1 hidden h-7 w-px bg-grid-line md:block" />
 
       <span
-        className="flex items-center gap-1 border border-branch/60 bg-branch/15 px-1.5 py-0.5 font-pixel text-[8px] text-branch mm-pulse"
-        title={`Model: ${m.modelName} — surrogate rollout, not an operational forecast.`}
+        className={`flex items-center gap-1.5 border px-1.5 py-0.5 font-mono text-[9px] ${
+          m.online ? "border-safe/60 bg-safe/10 text-ink" : "border-danger/60 bg-danger/10 text-danger"
+        }`}
+        title={m.online
+          ? `Live model reported by /health: ${m.modelName} (${m.backendUrl || "same-origin proxy"})`
+          : `Backend offline (${m.backendUrl || "same-origin proxy"})`}
+        aria-label={m.online ? `Backend online, model ${m.modelName}` : "Backend offline"}
       >
-        <Zap size={9} /> SURROGATE
+        <span className={`inline-block size-2 rounded-full ${m.online ? "bg-safe mm-pulse" : "bg-danger"}`} />
+        <Cpu size={10} />
+        {m.online ? m.modelName : "OFFLINE"}
       </span>
 
       {m.windows.length > 0 && (
