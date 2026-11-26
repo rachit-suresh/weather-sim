@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.5 (2026-11-26). **Status:** active.
+**Version:** 1.6 (2026-11-26). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -145,6 +145,10 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - **Phase 2b+, D4 + edge relax (approved by the team):** U-Net with `--rain-head two_part --edge-relax`
   (`p2_unet_d4edge`) versus `p2_unet_d4st`, same win rule (mean of the 3 window sets +0.5, shocks not lower).
   If it wins, run 3b adds edge relax to the other families.
+  **Result: WINS.** p2_unet_d4edge 66.20 / 68.70 / 69.25 (mean 68.05, +0.84) with shocks 14.25 (vs 13.88).
+- **Phase 2b, run 3b:** CNN, hybrid, ConvGRU, physics with run 2 recipe + `RAIN-3` + `EDG-2` F4 edge relax
+  (tags `r3b_<family>`); U-Net's run 3b model is `p2_unet_d4edge`. Run 3 (D4 only) keeps running as the
+  per-family comparison.
 - **Phase 2c:** ensembles of the best models (equal-weight average, and with `restore_variance`), and
   `SHP-6` CRPS ensemble (E3) on the best family.
 - **Phase 3:** `VAL-4` final retrain, `RUN-1` ONNX chain, brief.
@@ -167,3 +171,4 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.3 (2026-11-26): phase 2a results recorded; run 3 = run 2 recipe + `RAIN-3` on all 5 families.
 - 1.4 (2026-11-26): D4 + edge relax screening added; r3_unet reuses p2_unet_d4st (identical run).
 - 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
+- 1.6 (2026-11-26): D4 + edge relax wins the screening; run 3b adds it to the other 4 families.
