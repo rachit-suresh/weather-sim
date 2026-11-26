@@ -4,8 +4,8 @@ Date: 2026-11-27. Spec: `docs/SPEC.md` section 14 (`V2-P`, `V2-WIN`, `V2-E2`..`V
 Data: only the provided `india_climate_train.nc` (`CON-6`). Train 2005-2017, choose on 2018-19 (val), check on 2020-21 (test).
 Each experiment ran in its own worktree and branch, one seed, CPU only. Full write-ups: `docs/v2/RESULTS_E*.md` on each branch.
 
-**Bottom line: no experiment beats `r3_cnn` under `V2-WIN`, so v1.1 (`final_cnn`, the `r3_cnn` recipe) stays the submission
-and E1 (retrain the winner on 2005-2021) is not triggered.** Two follow-ups are running (E2b, E7b); this file is updated when they land.
+**Bottom line: no experiment (E2-E8, E2b, E7b, E7c) beats `r3_cnn` under `V2-WIN`, so v1.1 (`final_cnn`, the `r3_cnn` recipe) stays the submission
+and E1 (retrain the winner on 2005-2021) is not triggered.**
 
 ## Judge points (automatic parts, out of 70) and shocks (out of 15)
 
@@ -93,6 +93,11 @@ Amphan (2020, test year) is reported in each branch's results but never used to 
   test 63.18 / 64.82 / 67.75, mean 65.25 (-2.71); shocks 12.75 / 12.75; reach 6.77 / 7.00. CSI fell (test events 0.070).
   **Best cyclone track of any model**: Fani 308 / 104 / 528 km, landfall latitude exact; wind-shock rain -1.94 mm (92%).
   Spec error (protocol): two changes at once, so the CSI loss cannot be attributed.
-- **E7c** (final run): the reach budget alone, no shock guard, keeping more 3x3 capacity (theoretical bound <= 13,
-  measured <= 10). Result appended when done.
+- **E7c** (final run, 01f9653): the reach budget alone, no shock guard (bilinear lookups, cap 2.5, blocks 0-1 3x3,
+  block 2 1x1; bound sqrt(2) x 7 + 2.5 = 12.40, measured 8.72 / 8.81). **Loses.** Val 67.15 / 67.38 / 67.38, mean 67.30
+  (-0.62); test 65.42 / 66.03 / 67.38, mean 66.28 (-1.68); shocks 12.38 / 12.38. Val CSI back above r3_cnn
+  (0.112 / 0.109), test events CSI 0.087. Fani 350 / 0 / 607 km, landfall latitude exact; Amphan landfall exact (report only).
+  E7 conclusion: moving the weather inside the model fixes cyclone tracks, but rain from the correction path overshoots
+  the warm_ocean "stable" check, costing 1-2 shock points. A rain-only guard on top of E7c is the evidence-based next try.
+  Code risk: `runs/leaderboard.csv` append has no lock (parallel evaluations could lose a row).
 - Not repeated: E4, E5, E6, E8 (failure is in the method for our scoring, not the setting).
