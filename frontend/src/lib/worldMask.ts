@@ -165,7 +165,7 @@ export const WORLD_BIOME: Uint8Array = (() => {
 })();
 
 export const WORLD_RGB: Record<WorldBiome, readonly [number, number, number]> = {
-  0: [143, 208, 222], // ocean sky-teal
+  0: [43, 157, 199],  // ocean teal, matches the India art map sea (spec IMP-3)
   1: [164, 198, 114], // temperate meadow
   2: [110, 168, 86],  // lush forest
   3: [217, 196, 143], // plateau / desert sand (matches foreign India border terrain)
@@ -193,7 +193,7 @@ const DEG = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 
 export const GLOBE_FOCUS_CENTER = { lat: 21.5, lon: 80.5 };
-export const GLOBE_FOCUS_SCALE = 2.65;
+export const GLOBE_FOCUS_SCALE = 5.0; // spec IMP-3c: India comically large (was 2.65)
 export const GLOBE_FOCUS_INV_SCALE = 1 / GLOBE_FOCUS_SCALE;
 
 export function latLonToUnitVec(latDeg: number, lonDeg: number): [number, number, number] {

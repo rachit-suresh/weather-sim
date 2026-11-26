@@ -14,8 +14,9 @@ import {
 import { frame, diffFrame, type Timeline } from "@/lib/api";
 import {
   PAPER, TERRAIN, cellHash, stamp, computeTargetField,
-  colorForFieldValue, brushCellsAround, drawPixelSun, drawCompassRose, drawPixelSonarRipple,
+  colorForFieldValue, brushCellsAround, drawPixelSun, drawCompassRose, drawPixelSonarRipple, storyAlpha,
 } from "@/lib/mapSprites";
+import { getIndiaArt, artIndex } from "@/lib/indiaArt";
 import {
   WORLD_RGB, sampleWorldBiome,
   GLOBE_FOCUS_SCALE, GLOBE_FOCUS_INV_SCALE,
@@ -50,9 +51,12 @@ interface Props {
   showWind: boolean;
   showCities: boolean;
   showScenery: boolean;
+  weatherFocus?: number;
   running: boolean;
   focusRegion: string | null;
   onSwitchToFlatMap: () => void;
+  /** spec IMP-4: the floating station card is off by default (hovering a city shows the same numbers) */
+  stationCard?: boolean;
 }
 
 const DEG = Math.PI / 180;
@@ -133,7 +137,7 @@ export default function GlobeView(props: Props) {
   const {
     timeline, landSeaMask, view, variable, day, lens, lensOut, paintMask, paintMode, brushRadius,
     onPaint, onPaintEnd, selected, onSelect, ripples, showWind, showCities, running, focusRegion,
-    onSwitchToFlatMap,
+    onSwitchToFlatMap, stationCard = false,
   } = props;
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -415,6 +419,9 @@ export default function GlobeView(props: Props) {
     const u32 = new Uint32Array(imgData.data.buffer);
     // landFlags per quantized pixel: -1 = outside sphere, 0 = ocean, 1 = foreign/world land, 2 = India land
     const landFlags = new Int8Array(bufW * bufH);
+    // spec IMP-3f: forecast cell index per pixel (-1 = outside the grid) and grid-line weight (edge melt), for the cell grid
+    const cellBuf = new Int16Array(bufW * bufH);
+    const gridW = new Uint8Array(bufW * bufH);
 
     // Pre-seed celestial chart stars (deterministic)
     const stars: { x: number; y: number; s: number; phase: number; cross: boolean }[] = [];
@@ -487,9 +494,17 @@ export default function GlobeView(props: Props) {
 
       u32.fill(0);
       landFlags.fill(-1);
+      cellBuf.fill(-1);
 
       const pulseSin = 0.55 + 0.45 * Math.sin(tick * 0.08);
-      const showGridJoints = indiaPxPerDeg >= 9.0;
+      // Storybook mode (spec IMP-3c): India grid pixels come from the pixel-art India map
+      const story = p.showScenery;
+      const art = story ? getIndiaArt() : null;
+      const showGridJoints = indiaPxPerDeg >= 9.0 && !story;
+      // spec IMP-3f/g: faint cell grid over the art (one buffer pixel wide) and the weather-focus dimming
+      const wf = story ? Math.min(1, Math.max(0, p.weatherFocus ?? 0)) : 0;
+      const storyGrid = story && indiaPxPerDeg >= 4 * PIXEL_STEP;
+      const gridDark = 0.9 - 0.06 * wf;
 
       // ── Pass 1: Conformal Möbius + Orthographic pixel-art sphere shader ───
       for (let py = minPy; py <= maxPy; py++) {
@@ -539,9 +554,24 @@ export default function GlobeView(props: Props) {
             let rCol = t.base[0];
             let gCol = t.base[1];
             let bCol = t.base[2];
-
-            // Blend non-India foreign cells smoothly into neighboring world biomes (avoids rectangular seam)
-            if (mask === 1) {
+            let artKind = -1;
+            if (art) {
+              const ai = artIndex(latDeg, lonDeg);
+              artKind = art.kind[ai];
+              rCol = art.rgba[ai * 4]; gCol = art.rgba[ai * 4 + 1]; bCol = art.rgba[ai * 4 + 2];
+              // melt the rectangular art map into the world globe near the grid edge (India itself never fades)
+              let f = 1;
+              if (artKind !== 2) {
+                const edgeDeg = Math.min(latDeg - 6.0, 38.0 - latDeg, lonDeg - 65.0, 101.0 - lonDeg);
+                f = Math.max(0, Math.min(1, edgeDeg / 3.5));
+                const [wr, wg, wbCol] = WORLD_RGB[sampleWorldBiome(latDeg, lonDeg)];
+                rCol = wr + (rCol - wr) * f; gCol = wg + (gCol - wg) * f; bCol = wbCol + (bCol - wbCol) * f;
+              }
+              if (wf > 0) {
+                const d = 0.6 * wf * f; // fade the art toward paper; follows the edge melt so no box edge appears
+                rCol += (PAPER[0] - rCol) * d; gCol += (PAPER[1] - gCol) * d; bCol += (PAPER[2] - bCol) * d;
+              }
+            } else if (mask === 1) {
               const wb = sampleWorldBiome(latDeg, lonDeg);
               const [wr, wg, wbCol] = WORLD_RGB[wb];
               rCol = rCol * 0.45 + wr * 0.55;
@@ -560,6 +590,8 @@ export default function GlobeView(props: Props) {
               const edgeFade = mask === 2 ? 1 : Math.max(0, Math.min(1, edgeDeg / 5.5));
               let a = !p.showScenery
                 ? 1
+                : story
+                  ? storyAlpha(rawVal, scaleV, p.view, p.variable, p.lens, artKind < 0 ? mask : artKind)
                 : mask === 2
                   ? (strong ? 0.92 : 0.62)
                   : mask === 0
@@ -569,6 +601,7 @@ export default function GlobeView(props: Props) {
                 const mag = Math.min(1, Math.abs(rawVal) / (scaleV || 1));
                 a *= mag <= 0.04 ? 0 : Math.min(1, (mag - 0.04) * 3.0);
               }
+              if (wf > 0) a += (0.85 - a) * wf;
               a *= edgeFade;
               rCol = rCol * (1 - a) + col[0] * a;
               gCol = gCol * (1 - a) + col[1] * a;
@@ -599,10 +632,17 @@ export default function GlobeView(props: Props) {
               }
             }
 
+            if (storyGrid) {
+              cellBuf[bi] = ci;
+              const edgeDeg = Math.min(latDeg - 6.0, 38.0 - latDeg, lonDeg - 65.0, 101.0 - lonDeg);
+              gridW[bi] = mask === 2 ? 255 : Math.round(255 * Math.max(0, Math.min(1, edgeDeg / 3.5)));
+            }
+
             if (focusSet && !focusSet.has(ci)) {
-              rCol = rCol * 0.26 + PAPER[0] * 0.74;
-              gCol = gCol * 0.26 + PAPER[1] * 0.74;
-              bCol = bCol * 0.26 + PAPER[2] * 0.74;
+              const wash = story ? 0.35 : 0.74;     // lighter over the art map (spec IMP-3)
+              rCol = rCol * (1 - wash) + PAPER[0] * wash;
+              gCol = gCol * (1 - wash) + PAPER[1] * wash;
+              bCol = bCol * (1 - wash) + PAPER[2] * wash;
             }
 
             if (frontCol > -90) {
@@ -645,7 +685,7 @@ export default function GlobeView(props: Props) {
               Math.max(0, Math.min(255, bCol | 0)),
               255,
             );
-            landFlags[bi] = mask === 2 ? 2 : (mask === 1 || lsm >= 0.45) ? 1 : 0;
+            landFlags[bi] = artKind >= 0 ? artKind : mask === 2 ? 2 : (mask === 1 || lsm >= 0.45) ? 1 : 0;
           } else {
             // Outside India grid -> global pixel earth
             const wb = sampleWorldBiome(latDeg, lonDeg);
@@ -689,6 +729,24 @@ export default function GlobeView(props: Props) {
               255,
             );
             landFlags[bi] = wb === 0 ? 0 : 1;
+          }
+        }
+      }
+
+      // ── Pass 1b (spec IMP-3f): faint 1-pixel cell grid where the forecast cell changes from the left/upper pixel ─
+      if (storyGrid) {
+        for (let py = Math.max(1, minPy); py <= maxPy; py++) {
+          const rowOff = py * bufW;
+          for (let px = Math.max(1, minPx); px <= maxPx; px++) {
+            const bi = rowOff + px;
+            const ci = cellBuf[bi];
+            if (ci < 0) continue;
+            const lf = cellBuf[bi - 1], up = cellBuf[bi - bufW];
+            if ((lf >= 0 && lf !== ci) || (up >= 0 && up !== ci)) {
+              const k = 1 - (1 - gridDark) * (gridW[bi] / 255);
+              const v = u32[bi];
+              u32[bi] = packRgba(((v & 255) * k) | 0, (((v >>> 8) & 255) * k) | 0, (((v >>> 16) & 255) * k) | 0, 255);
+            }
           }
         }
       }
@@ -798,7 +856,7 @@ export default function GlobeView(props: Props) {
       ctx.clip();
 
       // Biome sprites across visible India cells + curving Himalayan arc
-      if (p.showScenery && indiaPxPerDeg >= 7.5) {
+      if (p.showScenery && !story && indiaPxPerDeg >= 7.5) {
         const spriteUnit = Math.max(1, indiaPxPerDeg / 9.2);
         for (let r = 0; r < NR; r++) {
           for (let c = 0; c < NC; c++) {
@@ -833,10 +891,10 @@ export default function GlobeView(props: Props) {
         const shipScale = Math.max(1, indiaPxPerDeg / 6.8);
 
         const arabShip = projectGeo(16.8, 68.0, axes, R, cx, cy, 0.2);
-        if (arabShip.visible) stamp(ctx, "ship", arabShip.x, arabShip.y + bob, shipScale);
+        if (arabShip.visible && !story) stamp(ctx, "ship", arabShip.x, arabShip.y + bob, shipScale);
 
         const bobShip = projectGeo(15.6, 87.2, axes, R, cx, cy, 0.2);
-        if (bobShip.visible) stamp(ctx, "ship", bobShip.x, bobShip.y - bob, shipScale * 0.88);
+        if (bobShip.visible && !story) stamp(ctx, "ship", bobShip.x, bobShip.y - bob, shipScale * 0.88);
 
         const fontPx = Math.max(7, Math.min(11, Math.round(indiaPxPerDeg * 0.42)));
         ctx.fillStyle = "#3f6e78";
@@ -1412,7 +1470,8 @@ export default function GlobeView(props: Props) {
       ref={wrapRef}
       className="relative h-full w-full scanlines select-none"
       style={{
-        background: "radial-gradient(circle at 50% 48%, #f8f1dc 0%, #f3e9cf 56%, #e7d8b0 100%)",
+        // soft halo only: the explorer's-chart backdrop (spec IMP-4h) shows around it
+        background: "radial-gradient(circle at 50% 48%, rgba(248,241,220,0.75) 0%, rgba(248,241,220,0.35) 38%, rgba(243,233,207,0) 62%)",
       }}
     >
       <canvas
@@ -1501,7 +1560,7 @@ export default function GlobeView(props: Props) {
       </div>
 
       {/* ── Radio Garden live city station tuner card (bottom-right) ── */}
-      {showCities && (
+      {showCities && stationCard && (
         <div className="pointer-events-auto absolute bottom-2 right-2 z-20 w-[212px] panel px-2.5 py-2 sm:w-[244px]">
           <div className="flex items-center justify-between gap-1.5">
             <span className="flex items-center gap-1.5 font-pixel text-[8px] text-safe">

@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Play, Pause, SkipBack } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Play, Pause, SkipBack, LineChart as ChartIcon, ChevronUp, ChevronDown } from "lucide-react";
 import { curveMonotoneX } from "d3-shape";
 import { Flap, PixelScrubber } from "@/components/ui";
 import { LineChart } from "@/components/bklit/charts/line-chart";
@@ -18,6 +18,7 @@ const YEAR_START = Date.UTC(2020, 0, 1);
 
 export default function TimelineDeck({ m }: { m: Multiverse }) {
   const t = m.timeline;
+  const [chartOpen, setChartOpen] = useState(false); // spec IMP-4d: chart folded by default
   const doy = t?.dayOfYear ?? 196;
   const baseMs = YEAR_START + doy * 86400000;
   const dayDate = (d: number) => new Date(baseMs + d * 86400000);
@@ -77,13 +78,26 @@ export default function TimelineDeck({ m }: { m: Multiverse }) {
           />
         </div>
 
-        <div className="hidden shrink-0 items-center gap-2 font-mono text-[8px] text-ink-faint md:flex">
-          <span className="flex items-center gap-1"><i className="inline-block h-0.5 w-3 bg-prime" /> PRIME</span>
-          <span className="flex items-center gap-1"><i className="inline-block h-0.5 w-3 bg-branch" /> BRANCHED</span>
-        </div>
+        {chartOpen && (
+          <div className="hidden shrink-0 items-center gap-2 font-mono text-[8px] text-ink-faint md:flex">
+            <span className="flex items-center gap-1"><i className="inline-block h-0.5 w-3 bg-prime" /> PRIME</span>
+            <span className="flex items-center gap-1"><i className="inline-block h-0.5 w-3 bg-branch" /> BRANCHED</span>
+          </div>
+        )}
+        <button
+          onClick={() => setChartOpen((o) => !o)}
+          aria-expanded={chartOpen}
+          className={`flex h-8 shrink-0 items-center gap-1 border px-2 font-pixel text-[8px] transition-colors ${
+            chartOpen ? "border-prime bg-prime/15 text-prime" : "border-grid-line bg-abyss text-ink-dim hover:text-ink"
+          }`}
+          title="Daily India average, Prime vs Branched"
+        >
+          <ChartIcon size={11} /> <span className="hidden sm:inline">CHART</span>
+          {chartOpen ? <ChevronDown size={10} /> : <ChevronUp size={10} />}
+        </button>
       </div>
 
-      <div className="relative h-[118px] px-1">
+      {chartOpen && <div className="relative h-[118px] px-1">
         <div className="pointer-events-none absolute left-3 top-1 z-10 font-pixel text-[8px] text-ink-faint">
           {title} <span className="text-ink-dim">({unit})</span>
         </div>
@@ -115,7 +129,8 @@ export default function TimelineDeck({ m }: { m: Multiverse }) {
             AWAITING /simulate
           </div>
         )}
-      </div>
+      </div>}
+      {!chartOpen && <div className="h-2" />}
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  PanelLeft, PanelRight, GitBranch, Eye, Shuffle, AlertTriangle, X,
-  Thermometer, CloudRain, Droplets, Wind, Gauge, Globe2, Map as MapIcon,
+  GitBranch, Eye, Shuffle, AlertTriangle, X, Zap, BarChart3, Paintbrush,
+  Globe2, Map as MapIcon, Layers,
 } from "lucide-react";
 import { StatusIsland } from "@/components/kokonutui/status-island";
 import PixelGrid from "@/components/PixelGrid";
@@ -12,26 +12,52 @@ import ShockRail from "@/components/ShockRail";
 import ImpactRail from "@/components/ImpactRail";
 import TimelineDeck from "@/components/TimelineDeck";
 import MapLegend from "@/components/MapLegend";
+import ViewMenu from "@/components/ViewMenu";
+import HelpModal from "@/components/HelpModal";
+import ChartBackdrop from "@/components/ChartBackdrop";
 import { PixelTabs } from "@/components/ui";
 import { useMultiverse } from "@/state/useMultiverse";
-import { computeLens } from "@/lib/impact";
+import { computeLens, lensById } from "@/lib/impact";
 import { VAR_KEYS, VAR_META, type VarKey } from "@/lib/grid";
 
 const EMPTY_MASK = new Map<number, number>();
-const VAR_ICONS: Record<VarKey, typeof Wind> = {
-  t2m: Thermometer, tp: CloudRain, tcwv: Droplets, u10: Wind, v10: Wind, msl: Gauge,
+
+/** spec IMP-4c: plain names for the six forecast variables (codes kept in brackets). */
+const VAR_PLAIN: Record<VarKey, string> = {
+  tp: "Rainfall", t2m: "Temperature", u10: "Wind east–west", v10: "Wind north–south", msl: "Pressure", tcwv: "Moisture",
 };
 
+/* spec IMP-4: on load only the header, the map and the day slider show; everything else opens on demand. */
 export default function App() {
   const m = useMultiverse();
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [impactNew, setImpactNew] = useState(false);
   const [errDismissed, setErrDismissed] = useState(false);
   const [globeMode, setGlobeMode] = useState(true);
 
   useEffect(() => {
     if (m.error) setErrDismissed(false);
   }, [m.error]);
+
+  // a fresh branch result: mark the Impact button (IMP-4b)
+  useEffect(() => {
+    if (m.diverged && m.timeline) setImpactNew(true);
+  }, [m.timeline?.runId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openLeft = useCallback(() => { setLeftOpen(true); setRightOpen(false); }, []);
+  const openRight = useCallback(() => { setRightOpen(true); setLeftOpen(false); setImpactNew(false); }, []);
+
+  // clicking a cell opens its inspector in the Impact drawer (IMP-4b)
+  useEffect(() => {
+    if (m.selected !== null) openRight();
+  }, [m.selected, openRight]);
+
+  // painting needs the map: close the drawer while the brush is armed
+  useEffect(() => {
+    if (m.paintMode) setLeftOpen(false);
+  }, [m.paintMode]);
 
   const lensOut = useMemo(
     () => (m.timeline && m.lens ? computeLens(m.timeline, m.lens, m.day) : null),
@@ -41,10 +67,35 @@ export default function App() {
   const showError = m.error && !errDismissed;
   const switchToFlat = useCallback(() => setGlobeMode(false), []);
   const switchToGlobe = useCallback(() => setGlobeMode(true), []);
+  const queued = m.perturbationCount;
+
+  const mapProps = {
+    timeline: m.timeline,
+    landSeaMask: m.landSeaMask,
+    view: m.view,
+    variable: m.variable,
+    day: m.day,
+    lens: m.lens,
+    lensOut,
+    paintMask: m.painted?.mask ?? EMPTY_MASK,
+    paintMode: m.paintMode,
+    brushRadius: m.brushRadius,
+    onPaint: m.onPaint,
+    onPaintEnd: m.onPaintEnd,
+    selected: m.selected,
+    onSelect: m.selectCell,
+    ripples: m.ripples,
+    showWind: m.showWind,
+    showCities: m.showCities,
+    showScenery: m.showScenery,
+    weatherFocus: m.weatherFocus,
+    running: m.running,
+    focusRegion: m.focusRegion,
+  };
 
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden bg-void text-ink">
-      <HeaderBar m={m} />
+      <HeaderBar m={m} onHelp={() => setHelpOpen(true)} />
 
       <StatusIsland
         tasks={m.tasks}
@@ -54,54 +105,39 @@ export default function App() {
       />
 
       <div className="relative z-10 flex min-h-0 flex-1">
-        {/* ── left rail: shock painter ── */}
-        <aside className="hidden w-[288px] shrink-0 border-r border-grid-line bg-abyss/70 backdrop-blur-md lg:block">
+        {/* ── left drawer: shocks (IMP-4a) ── */}
+        <Drawer side="left" open={leftOpen} onClose={() => setLeftOpen(false)} label="Close shocks panel" width={300}>
           <ShockRail m={m} />
-        </aside>
-        <AnimatePresence>
-          {leftOpen && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="absolute inset-0 z-40 bg-void/70 backdrop-blur-sm lg:hidden"
-                onClick={() => setLeftOpen(false)}
-              />
-              <motion.aside
-                initial={{ x: -300 }} animate={{ x: 0 }} exit={{ x: -300 }}
-                transition={{ type: "spring", stiffness: 420, damping: 38 }}
-                className="absolute inset-y-0 left-0 z-50 w-[288px] border-r border-grid-line bg-abyss/95 backdrop-blur-md lg:hidden"
-              >
-                <button
-                  onClick={() => setLeftOpen(false)}
-                  aria-label="Close shock painter"
-                  className="absolute right-2 top-2 z-10 grid size-7 place-items-center border border-grid-line bg-abyss text-ink-dim hover:text-ink"
-                >
-                  <X size={13} />
-                </button>
-                <div className="h-full pt-9">
-                  <ShockRail m={m} />
-                </div>
-              </motion.aside>
-            </>
-          )}
-        </AnimatePresence>
+        </Drawer>
 
         {/* ── centre: globe or flat map + timeline ── */}
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
-            {/* view + variable overlays */}
+            <ChartBackdrop />
+            {/* toolbar */}
             <div className="pointer-events-none absolute inset-x-2 top-2 z-20 flex flex-wrap items-start justify-between gap-2">
               <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
+                <button
+                  onClick={openLeft}
+                  className="relative flex h-[26px] items-center gap-1.5 border border-shock bg-shock px-2.5 font-pixel text-[8px] text-white shadow-[2px_2px_0_rgba(51,32,15,0.18)] hover:brightness-110"
+                  aria-label="Open shocks panel"
+                >
+                  <Zap size={11} /> SHOCKS
+                  {queued > 0 && (
+                    <span className="ml-0.5 grid min-w-4 place-items-center bg-white px-1 font-mono text-[9px] text-shock">{queued}</span>
+                  )}
+                </button>
+
                 <div className="flex gap-0.5 border border-grid-line bg-abyss/80 p-0.5">
                   <button
                     onClick={switchToGlobe}
                     className={`flex items-center gap-1 px-1.5 py-1 font-pixel text-[8px] transition-colors ${
                       globeMode ? "bg-safe text-white" : "text-ink-dim hover:text-ink"
                     }`}
-                    title="Interactive pixel-art Radio Garden globe"
+                    title="Globe view"
                   >
                     <Globe2 size={10} />
-                    <span>GLOBE</span>
+                    <span className="hidden sm:inline">GLOBE</span>
                   </button>
                   <button
                     onClick={switchToFlat}
@@ -126,30 +162,37 @@ export default function App() {
                 />
               </div>
 
-              <div className="pointer-events-auto flex gap-0.5 border border-grid-line bg-abyss/80 p-0.5">
+              <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-1.5">
                 {m.lens ? (
-                  <span className="px-2 py-1 font-pixel text-[8px] text-ink-faint">
-                    LENS ACTIVE — RAW FIELDS OFF
-                  </span>
+                  <button
+                    onClick={() => m.setLens(null)}
+                    className="flex h-[26px] items-center gap-1 border border-branch/60 bg-branch/15 px-2 font-pixel text-[8px] text-branch hover:bg-branch/25"
+                    title="An impact lens is showing; click to go back to the raw forecast variables"
+                  >
+                    <Layers size={10} /> {lensById(m.lens).short} LENS <X size={10} />
+                  </button>
                 ) : (
-                  VAR_KEYS.map((v) => {
-                    const Icon = VAR_ICONS[v];
-                    const active = m.variable === v;
-                    return (
-                      <button
-                        key={v}
-                        onClick={() => m.setVariable(v)}
-                        title={VAR_META[v].label}
-                        className={`flex items-center gap-1 px-1.5 py-1 font-pixel text-[8px] transition-colors ${
-                          active ? "bg-prime text-void" : "text-ink-dim hover:text-ink"
-                        }`}
-                      >
-                        <Icon size={9} strokeWidth={2.5} />
-                        <span className="hidden sm:inline">{VAR_META[v].short}</span>
-                      </button>
-                    );
-                  })
+                  <select
+                    value={m.variable}
+                    onChange={(e) => m.setVariable(e.target.value as VarKey)}
+                    aria-label="Forecast variable"
+                    title="Which forecast variable the map shows"
+                    className="h-[26px] border border-grid-line bg-abyss/90 px-1.5 font-mono text-[10px] text-ink outline-none focus:border-prime/60"
+                  >
+                    {VAR_KEYS.map((v) => (
+                      <option key={v} value={v}>{VAR_PLAIN[v]} ({VAR_META[v].short})</option>
+                    ))}
+                  </select>
                 )}
+                <ViewMenu m={m} />
+                <button
+                  onClick={openRight}
+                  className="relative flex h-[26px] items-center gap-1.5 border border-branch bg-branch px-2.5 font-pixel text-[8px] text-white shadow-[2px_2px_0_rgba(51,32,15,0.18)] hover:brightness-110"
+                  aria-label="Open impact panel"
+                >
+                  <BarChart3 size={11} /> IMPACT
+                  {impactNew && <span className="absolute -right-1 -top-1 size-2.5 border border-white bg-danger mm-pulse" aria-label="new result" />}
+                </button>
               </div>
             </div>
 
@@ -163,29 +206,7 @@ export default function App() {
                   transition={{ duration: 0.3, ease: "easeOut" }}
                   className="absolute inset-0"
                 >
-                  <GlobeView
-                    timeline={m.timeline}
-                    landSeaMask={m.landSeaMask}
-                    view={m.view}
-                    variable={m.variable}
-                    day={m.day}
-                    lens={m.lens}
-                    lensOut={lensOut}
-                    paintMask={m.painted?.mask ?? EMPTY_MASK}
-                    paintMode={m.paintMode}
-                    brushRadius={m.brushRadius}
-                    onPaint={m.onPaint}
-                    onPaintEnd={m.onPaintEnd}
-                    selected={m.selected}
-                    onSelect={m.selectCell}
-                    ripples={m.ripples}
-                    showWind={m.showWind}
-                    showCities={m.showCities}
-                    showScenery={m.showScenery}
-                    running={m.running}
-                    focusRegion={m.focusRegion}
-                    onSwitchToFlatMap={switchToFlat}
-                  />
+                  <GlobeView {...mapProps} onSwitchToFlatMap={switchToFlat} />
                 </motion.div>
               ) : (
                 <motion.div
@@ -196,55 +217,51 @@ export default function App() {
                   transition={{ duration: 0.3, ease: "easeOut" }}
                   className="absolute inset-0"
                 >
-                  <PixelGrid
-                    timeline={m.timeline}
-                    landSeaMask={m.landSeaMask}
-                    view={m.view}
-                    variable={m.variable}
-                    day={m.day}
-                    lens={m.lens}
-                    lensOut={lensOut}
-                    paintMask={m.painted?.mask ?? EMPTY_MASK}
-                    paintMode={m.paintMode}
-                    brushRadius={m.brushRadius}
-                    onPaint={m.onPaint}
-                    onPaintEnd={m.onPaintEnd}
-                    selected={m.selected}
-                    onSelect={m.selectCell}
-                    ripples={m.ripples}
-                    showWind={m.showWind}
-                    showCities={m.showCities}
-                    showScenery={m.showScenery}
-                    running={m.running}
-                    focusRegion={m.focusRegion}
-                  />
+                  <PixelGrid {...mapProps} />
                 </motion.div>
               )}
             </AnimatePresence>
 
             <MapLegend m={m} lensOut={lensOut} />
 
-            {/* first-run guidance */}
-            <AnimatePresence>
-              {m.booted && !m.diverged && m.perturbationCount === 0 && !m.paintMode && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                  className="pointer-events-none absolute bottom-14 left-1/2 z-10 hidden -translate-x-1/2 panel px-3 py-1.5 font-pixel text-[8px] text-ink-dim md:bottom-2 md:block"
-                >
-                  {globeMode && (
-                    <>
-                      <span className="text-safe">SPIN EARTH</span>
-                      <span className="mx-1.5 text-ink-faint">·</span>
-                    </>
-                  )}
-                  <span className="text-shock">1 PAINT A SHOCK</span>
-                  <span className="mx-1.5 text-ink-faint">→</span>
-                  <span className="text-branch">2 BRANCH</span>
-                  <span className="mx-1.5 text-ink-faint">→</span>
-                  <span className="text-prime">3 WATCH IT RIPPLE</span>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {/* bottom-centre actions: first-run hint, painting controls, branch button */}
+            <div className="pointer-events-none absolute bottom-2 left-1/2 z-30 flex -translate-x-1/2 flex-wrap items-center justify-center gap-1.5">
+              <AnimatePresence>
+                {m.booted && !m.diverged && queued === 0 && !m.paintMode && !leftOpen && (
+                  <motion.button
+                    key="hint"
+                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    onClick={openLeft}
+                    className="pointer-events-auto panel px-3 py-1.5 font-pixel text-[8px] text-ink-dim hover:text-ink"
+                  >
+                    START: <span className="text-shock">SHOCKS</span> → PICK ONE → <span className="text-branch">BRANCH</span>
+                  </motion.button>
+                )}
+                {m.paintMode && (
+                  <motion.div
+                    key="paint"
+                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    className="pointer-events-auto flex items-center gap-2 border border-shock/60 bg-panel/95 px-2.5 py-1 font-pixel text-[8px] text-shock"
+                  >
+                    <Paintbrush size={11} /> PAINTING: DRAG ON INDIA · SHIFT-DRAG ERASES
+                    <button onClick={() => m.setPaintMode(false)} className="border border-shock bg-shock px-1.5 py-0.5 text-white">DONE</button>
+                  </motion.div>
+                )}
+                {queued > 0 && !leftOpen && (
+                  <motion.button
+                    key="branch"
+                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => void m.run()}
+                    disabled={m.running}
+                    className="pointer-events-auto flex items-center gap-1.5 border border-shock bg-shock px-3 py-1.5 font-pixel text-[9px] text-white shadow-[3px_3px_0_rgba(51,32,15,0.2)] hover:brightness-110 disabled:opacity-60"
+                  >
+                    <GitBranch size={12} className={m.running ? "mm-pulse" : ""} />
+                    {m.running ? "SIMULATING…" : `BRANCH TIMELINE (${queued})`}
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </div>
 
             {/* error banner */}
             <AnimatePresence>
@@ -266,62 +283,51 @@ export default function App() {
           <TimelineDeck m={m} />
         </main>
 
-        {/* ── right rail: impact + inspector ── */}
-        <aside className="hidden w-[324px] shrink-0 border-l border-grid-line bg-abyss/70 backdrop-blur-md xl:block">
+        {/* ── right drawer: impact + cell inspector (IMP-4b) ── */}
+        <Drawer side="right" open={rightOpen} onClose={() => setRightOpen(false)} label="Close impact panel" width={330}>
           <ImpactRail m={m} />
-        </aside>
-        <AnimatePresence>
-          {rightOpen && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="absolute inset-0 z-40 bg-void/70 backdrop-blur-sm xl:hidden"
-                onClick={() => setRightOpen(false)}
-              />
-              <motion.aside
-                initial={{ x: 340 }} animate={{ x: 0 }} exit={{ x: 340 }}
-                transition={{ type: "spring", stiffness: 420, damping: 38 }}
-                className="absolute inset-y-0 right-0 z-50 w-[324px] border-l border-grid-line bg-abyss/95 backdrop-blur-md xl:hidden"
-              >
-                <button
-                  onClick={() => setRightOpen(false)}
-                  aria-label="Close impact panel"
-                  className="absolute right-2 top-2 z-10 grid size-7 place-items-center border border-grid-line bg-abyss text-ink-dim hover:text-ink"
-                >
-                  <X size={13} />
-                </button>
-                <div className="h-full pt-9">
-                  <ImpactRail m={m} />
-                </div>
-              </motion.aside>
-            </>
-          )}
-        </AnimatePresence>
+        </Drawer>
       </div>
 
-      {/* mobile rail toggles — lifted cleanly above MapLegend & Tuned Station card */}
-      {!leftOpen && (
-        <div className="pointer-events-none absolute bottom-[284px] left-2 z-30 lg:hidden">
-          <button
-            onClick={() => { setLeftOpen(true); setRightOpen(false); }}
-            className="pointer-events-auto grid size-9 place-items-center border border-shock/50 bg-abyss/90 text-shock backdrop-blur-md"
-            aria-label="Open shock painter"
-          >
-            <PanelLeft size={15} />
-          </button>
-        </div>
-      )}
-      {!rightOpen && (
-        <div className="pointer-events-none absolute bottom-[284px] right-2 z-30 xl:hidden">
-          <button
-            onClick={() => { setRightOpen(true); setLeftOpen(false); }}
-            className="pointer-events-auto grid size-9 place-items-center border border-branch/50 bg-abyss/90 text-branch backdrop-blur-md"
-            aria-label="Open impact panel"
-          >
-            <PanelRight size={15} />
-          </button>
-        </div>
-      )}
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
+  );
+}
+
+function Drawer({
+  side, open, onClose, label, width, children,
+}: {
+  side: "left" | "right"; open: boolean; onClose: () => void; label: string; width: number; children: React.ReactNode;
+}) {
+  const off = side === "left" ? -width - 12 : width + 12;
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="absolute inset-0 z-40 bg-void/40"
+            onClick={onClose}
+          />
+          <motion.aside
+            initial={{ x: off }} animate={{ x: 0 }} exit={{ x: off }}
+            transition={{ type: "spring", stiffness: 420, damping: 38 }}
+            className={`absolute inset-y-0 z-50 max-w-[92vw] bg-abyss/95 backdrop-blur-md ${
+              side === "left" ? "left-0 border-r" : "right-0 border-l"
+            } border-grid-line`}
+            style={{ width }}
+          >
+            <button
+              onClick={onClose}
+              aria-label={label}
+              className="absolute right-2 top-2 z-10 grid size-7 place-items-center border border-grid-line bg-abyss text-ink-dim hover:text-ink"
+            >
+              <X size={13} />
+            </button>
+            <div className="h-full pt-9">{children}</div>
+          </motion.aside>
+        </>
+      )}
+    </AnimatePresence>
   );
 }

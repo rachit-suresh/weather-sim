@@ -11,8 +11,9 @@ import { frame, diffFrame, type Timeline } from "@/lib/api";
 import { rgbCss, type RGB } from "@/lib/colormaps";
 import {
   PAPER, TERRAIN, cellHash, stamp, computeTargetField,
-  colorForFieldValue, brushCellsAround, drawPixelSun, drawCompassRose, drawPixelSonarRipple,
+  colorForFieldValue, brushCellsAround, drawPixelSun, drawCompassRose, drawPixelSonarRipple, storyAlpha,
 } from "@/lib/mapSprites";
+import { getIndiaArt, getIndiaOutline } from "@/lib/indiaArt";
 import type { LensId, LensOutput } from "@/lib/impact";
 
 export type ViewMode = "prime" | "branched" | "diff";
@@ -38,6 +39,7 @@ interface Props {
   showWind: boolean;
   showCities: boolean;
   showScenery: boolean;
+  weatherFocus?: number;
   running: boolean;
   focusRegion: string | null;
 }
@@ -244,6 +246,18 @@ export default function PixelGrid(props: Props) {
 
       const px = Math.max(1, cell - GAP);
       const half = GAP / 2;
+      // Storybook mode (spec IMP-3b): the pixel-art India map is the base layer, the forecast is a tint on top.
+      const story = p.showScenery;
+      if (story) {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(getIndiaArt().canvas, ox, oy, NC * cell, NR * cell);
+      }
+      // spec IMP-3g: weather focus fades the art toward paper (up to 60%) and lifts every tint toward 0.85
+      const wf = story ? Math.min(1, Math.max(0, p.weatherFocus ?? 0)) : 0;
+      if (wf > 0) {
+        ctx.fillStyle = rgbCss(PAPER, 0.6 * wf);
+        ctx.fillRect(ox, oy, NC * cell, NR * cell);
+      }
 
       let focusSet: Set<number> | null = null;
       if (p.focusRegion) {
@@ -267,16 +281,23 @@ export default function PixelGrid(props: Props) {
           }
 
           const x = ox + c * cell + half;
-          ctx.fillStyle = rgbCss(base);
-          ctx.fillRect(x, y, px, px);
+          if (!story) {
+            ctx.fillStyle = rgbCss(base);
+            ctx.fillRect(x, y, px, px);
+          }
 
           if (p.timeline) {
             const col = colorFor(disp[i]);
-            const a = !p.showScenery ? 1 : mask === 2 ? (strong ? 0.92 : 0.62) : mask === 0 ? (strong ? 0.65 : 0.16) : (strong ? 0.45 : 0.18);
-            ctx.fillStyle = rgbCss(col, a);
-            ctx.fillRect(x, y, px, px);
+            let a = !story ? 1 : storyAlpha(disp[i], scaleRef.current.v, p.view, p.variable, p.lens, mask);
+            if (wf > 0) a += (0.85 - a) * wf;
+            if (a > 0.01) {
+              ctx.fillStyle = rgbCss(col, a);
+              // storybook tint covers the whole cell (no grid gaps) so the art reads as one landscape
+              if (story) ctx.fillRect(ox + c * cell, y - half, cell, cell);
+              else ctx.fillRect(x, y, px, px);
+            }
           }
-          if (p.showScenery && !strong && mask !== 0) {
+          if (!story && p.showScenery && !strong && mask !== 0) {
             ctx.fillStyle = "rgba(255,248,231,0.16)";
             ctx.fillRect(x, y, px, 1);
             ctx.fillStyle = "rgba(105,68,46,0.12)";
@@ -284,8 +305,10 @@ export default function PixelGrid(props: Props) {
           }
 
           if (focusSet && !focusSet.has(i)) {
-            ctx.fillStyle = rgbCss(PAPER, 0.74);
-            ctx.fillRect(x, y, px, px);
+            // lighter wash over the art so the map (and a spreading shock) stays readable outside the focus region
+            ctx.fillStyle = rgbCss(PAPER, story ? 0.35 : 0.74);
+            if (story) ctx.fillRect(ox + c * cell, y - half, cell, cell);
+            else ctx.fillRect(x, y, px, px);
           }
 
           const sw = sweepRef.current.v;
@@ -300,7 +323,23 @@ export default function PixelGrid(props: Props) {
         }
       }
 
-      if (p.showScenery && cell >= 7) {
+      // spec IMP-3f: faint 32 x 36 cell grid over the art so the forecast cells stay visible
+      if (story && cell >= 4) {
+        ctx.fillStyle = `rgba(62,42,24,${0.13 + 0.07 * wf})`;
+        const gw = NC * cell, gh = NR * cell;
+        for (let c = 0; c <= NC; c++) ctx.fillRect(Math.round(ox + c * cell) - 0.5, oy, 1, gh);
+        for (let r = 0; r <= NR; r++) ctx.fillRect(ox, Math.round(oy + r * cell) - 0.5, gw, 1);
+      }
+      // spec IMP-3g: as the art fades, ink the coast and India border back in so the geography stays readable
+      if (wf > 0) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, wf * 1.4);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(getIndiaOutline(), ox, oy, NC * cell, NR * cell);
+        ctx.restore();
+      }
+
+      if (!story && p.showScenery && cell >= 7) {
         for (let r = 0; r < NR; r++) {
           const y = screenY(r, cell, oy, half);
           for (let c = 0; c < NC; c++) {
@@ -338,10 +377,11 @@ export default function PixelGrid(props: Props) {
           ? false
           : (p.landSeaMask?.[rr]?.[cc] ?? GRID.land_sea_mask[rr][cc]) < 0.45 && GRID.mask[rr][cc] === 0;
 
-      ctx.strokeStyle = "rgba(122,47,31,0.9)";
+      // (storybook mode: the art map already has its coast, cliff and India border)
+      ctx.strokeStyle = story ? "rgba(0,0,0,0)" : "rgba(122,47,31,0.9)";
       ctx.lineWidth = Math.max(1.5, cell * 0.1);
       ctx.beginPath();
-      for (let r = 0; r < NR; r++) {
+      for (let r = 0; r < NR && !story; r++) {
         const y = screenY(r, cell, oy, half);
         for (let c = 0; c < NC; c++) {
           if (GRID.mask[r][c] === 0) continue;
@@ -359,7 +399,7 @@ export default function PixelGrid(props: Props) {
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
-      for (let r = 0; r < NR; r++) {
+      for (let r = 0; r < NR && !story; r++) {
         const y = screenY(r, cell, oy, half);
         for (let c = 0; c < NC; c++) {
           if (GRID.mask[r][c] !== 2) continue;
@@ -380,10 +420,12 @@ export default function PixelGrid(props: Props) {
         const seaAt = (r: number, c: number) =>
           r >= 0 && c >= 0 && r < NR && c < NC && GRID.mask[r][c] === 0;
 
-        // Arabian Sea (west, col ~4, row ~11) and Bay of Bengal (east, col ~24, row ~9)
-        stamp(ctx, "ship", ox + 4.5 * cell, screenY(11, cell, oy, 0) + bob, cell / 6);
-        stamp(ctx, "ship", ox + 24.5 * cell, screenY(9, cell, oy, 0) - bob, cell / 7);
-        ctx.fillStyle = "#467b85";
+        // Arabian Sea (west, col ~4, row ~11) and Bay of Bengal (east, col ~24, row ~9); the art map has its own boats
+        if (!story) {
+          stamp(ctx, "ship", ox + 4.5 * cell, screenY(11, cell, oy, 0) + bob, cell / 6);
+          stamp(ctx, "ship", ox + 24.5 * cell, screenY(9, cell, oy, 0) - bob, cell / 7);
+        }
+        ctx.fillStyle = story ? "#e9f7fb" : "#467b85";
         ctx.font = `${Math.max(7, cell * 0.4)}px Silkscreen, monospace`;
         ctx.textAlign = "center";
         ctx.fillText("ARABIAN", ox + 4.5 * cell, screenY(8.2, cell, oy, 0));
@@ -411,6 +453,27 @@ export default function PixelGrid(props: Props) {
           ctx.fillRect(x + 3 * s * 1.15 - s * 0.2, y - s * 0.75, s * 0.62, s * 0.62);
           ctx.fillStyle = "#fbf5e4";
           ctx.fillRect(x + 3 * s * 1.15 + s * 0.12, y - s * 0.6, s * 0.16, s * 0.16);
+        }
+      }
+
+      // ── storybook weather sprites (spec IMP-3d): rain clouds over wet cells ──
+      if (story && p.timeline && cell >= 7 && p.view !== "diff") {
+        const showRain = p.lens === "flood" || (!p.lens && p.variable === "tp");
+        if (showRain) {
+          const rain = frame(p.timeline[p.view === "prime" ? "prime" : "branched"].tp, p.day);
+          for (let r = 0; r < NR; r++) for (let c = 0; c < NC; c++) {
+            const i = r * NC + c;
+            // sparse: about 1 in 4 wet land cells, 1 in 9 wet sea cells, so the art stays readable
+            if (rain[i] < 20 || cellHash(r, c) % (GRID.mask[r][c] === 0 ? 9 : 4) !== 0) continue;
+            const x = ox + c * cell + cell / 2, y = screenY(r, cell, oy, 0) + cell * 0.25;
+            stamp(ctx, "cloud", x, y, cell / 12);
+            ctx.fillStyle = "rgba(47,127,181,0.85)";
+            const drops = rain[i] > 60 ? 4 : 2;
+            for (let d = 0; d < drops; d++) {
+              const fall = reducedMotion.matches ? 0.5 : (tick * 0.03 + d * 0.27 + c * 0.13) % 1;
+              ctx.fillRect(x - cell * 0.3 + d * cell * 0.2, y + cell * (0.25 + fall * 0.45), Math.max(1, cell * 0.06), Math.max(2, cell * 0.16));
+            }
+          }
         }
       }
 
