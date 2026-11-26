@@ -1,105 +1,97 @@
-# weather-sim: Multiverse of Monsoon digital twin
+# weather-sim: Multiverse of Monsoon digital twin (Team Sage)
 
-Yugaantar DevForge, Track 2. A fast climate digital twin of India: from 3 days of state it rolls the
-weather forward 10 days (Timeline Prime) and answers "what if" shocks (Multiverse).
+Yugaantar DevForge, Track 2. A fast, local, rain-aware digital twin of India's weather: from 3 days of state it
+rolls the weather forward day by day (Timeline Prime) and answers "what if" shocks (Multiverse).
+Brief: [`BRIEF.pdf`](BRIEF.pdf). Spec (source of truth): [`docs/SPEC.md`](docs/SPEC.md).
 
-| Folder | What | Owner |
-|---|---|---|
-| `serve.py` | The judge's entry point: `python serve.py --port 8000` | models |
-| `twin/` | Inference package: engine, model families, codec, clamps (imported by the server) | models / optimisation |
-| `training/` | Data loading, training, local grader, artifact builders (never imported by the server) | models |
-| `artifacts/` | What the server loads: climatology, stats, fitted baselines, `models/*.pt` (Git LFS) | models |
-| `dashboard/` | HTML/JS dashboard + impact module, talks to the server over HTTP | visualisation |
-| `docs/` | `MODEL_FAMILIES.md`, `DECISIONS.md`, `GRADING_NOTES.md` | everyone |
-| `scripts/` | `check_repo.py` (judge's repo scan) | everyone |
-| `tests/` | Engine contract tests | everyone |
-
-## Setup
+## 1. Run it (what the judge runs, fully offline)
 
 ```bash
-python -m venv .venv && . .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt                        # what the server needs
-pip install -r requirements-train.txt                  # training + evaluation
-pip install path/to/monsoon_r1_kit-1.0.0-py3-none-any.whl   # official kit (scoring, validator, repo scan)
-git lfs install && git lfs pull                        # model weights
+pip install -r requirements.txt        # torch (CPU), numpy, fastapi, uvicorn - all in the judge sandbox
+python serve.py --port 8000            # listens on 0.0.0.0; ready in about 3 s
 ```
 
-Put `india_climate_train.nc` next to the repo folder (`../india_climate_train.nc`) or set `TWIN_DATA`.
-Never commit it.
+- `POST /health` -> `{"status": "ready", "model_name": "cnn:final_cnn"}`; `POST /simulate` follows `API_CONTRACT.md`
+  (physical units, nested JSON lists). A 10-day forecast takes about 40-100 ms on 4 CPU cores.
+- Everything the server needs is in this repo as plain files (no Git LFS, nothing downloaded): weights in
+  `artifacts/models/`, climatology and static maps in `artifacts/climatology.npz`.
+- The served model is chosen in `artifacts/active.json`. If it ever fails to load or forecast, a damped-persistence
+  fallback answers, so the server always starts and every request gets a valid answer.
+- Check it with the official kit: `python -m monsoon_r1.schema_validator http://127.0.0.1:8000`
+  (on Windows use `127.0.0.1`, not `localhost`, which adds about 2 s per call).
 
-## Run the server
+## 2. Dashboard (Multiverse Map)
 
 ```bash
-python serve.py --port 8000
-python -m monsoon_r1.schema_validator http://127.0.0.1:8000      # official contract check
+python serve.py --port 8000                     # terminal 1
+python -m http.server 5500 -d dashboard         # terminal 2, open http://127.0.0.1:5500
 ```
 
-On Windows use `127.0.0.1`, not `localhost`: `localhost` tries IPv6 first and adds ~2 s per call
-(the server listens on IPv4 `0.0.0.0`). Measured: 2.1 s via `localhost`, 0.05 s via `127.0.0.1`.
+Prebuilt static app in `dashboard/`, React + TypeScript source in `frontend/` (`cd frontend && npm ci && npm run build`
+rebuilds `dashboard/`). Every map is a live call to the server; nothing is pre-rendered. Shock brush and the judges'
+presets, Prime vs Shocked branch timelines, impact lenses (flood risk, wet-bulb heat stress, crop water balance,
+wind and solar). Server contract for the frontend: `docs/DASHBOARD_API.md`.
 
-The active model is set in `artifacts/active.json` (or `TWIN_MODEL_SPEC=path.json`):
+## 3. The submitted model
 
-```json
-{"model": "damped_anomaly"}
-{"model": "neural", "checkpoint": "models/cnn_base.pt"}
-{"model": "ensemble", "members": [{"model": "neural", "checkpoint": "models/a.pt"}, {"model": "damped_anomaly"}], "weights": [0.7, 0.3]}
-```
+`artifacts/models/final_cnn.pt`: a local residual CNN (7 layers of 3x3 convolutions, 239k weights) that predicts the
+next day's change in anomaly, with a two-part rain head ("does it rain?" + "how much?"), trained on **all
+2005-2021 data**. How it works: `docs/HOW_THE_MODELS_WORK.md`.
 
-## Dashboard
+The recipe was chosen by measurement before this final retrain: 30+ models from 9 families were trained on
+2005-2017, compared on 2018-19 and checked on untouched 2020-21, all scored with the organisers' own scoring code
+(`training/evaluate.py`). The chosen recipe (`r3_cnn`) scored 67.9 / 70 on 2018-19 and 68.0 / 70 on 2020-21 on the
+judge's automatic parts. Full history: `docs/RESULTS_SWEEP_1.md`, `docs/RESULTS_RUN_2.md`, `docs/RESULTS_RUN_3.md`.
+
+## 4. Reproduce the submitted model from scratch
 
 ```bash
-python serve.py --port 8000                  # terminal 1
-python -m http.server 5500 -d dashboard      # terminal 2, then open http://localhost:5500
+pip install -r requirements-train.txt
+pip install monsoon_r1_kit-1.0.0-py3-none-any.whl    # organisers' kit from their Release page (scoring, validator, scan)
+# put india_climate_train.nc next to the repo folder (../india_climate_train.nc) or set TWIN_DATA=/path/to/it
+
+python -m training.build_artifacts                   # artifacts/climatology.npz + stats.json (2005-2021)
+python -m training.fit_damped                        # artifacts/damped.json (fallback model)
+python -m training.train_nn --family cnn --name final_cnn --rain-head two_part \
+       --train-years 2005-2021 --final --threads 8   # artifacts/models/final_cnn.pt (CPU, about 1 hour)
 ```
 
-See `dashboard/README.md` and the server contract `docs/DASHBOARD_API.md` (with the DO NOTs).
+The other defaults of `train_nn` are the recipe in `docs/SPEC.md`: square-root rain, 3x weight on cells above
+10 mm, spread + spectral losses, unroll curriculum 1-2-4-8 days, seed 0. Training saves its full state every epoch,
+so `--resume` continues after an interruption. Then point `artifacts/active.json` at
+`{"model": "neural", "checkpoint": "models/final_cnn.pt"}`.
 
-## Train and evaluate
+To reproduce the model-selection runs (train 2005-2017, score on held-out years):
 
 ```bash
-python -m training.build_artifacts           # climatology.npz + stats.json
-python -m training.fit_damped                # family 1 baseline
-python -m training.train_nn --family cnn --name cnn_base
-python -m training.evaluate --checkpoint models/cnn_base.pt --split val
+python -m training.run2 --family cnn --prefix r3 "--options=--rain-head two_part"     # = r3_cnn
+python -m training.evaluate --checkpoint models/r3_cnn.pt --split test               # 2020-21 check
+python -m training.report --prefix r3_                                               # leaderboard table
 ```
 
-Every evaluation appends a row to `runs/leaderboard.csv` with every judge score component
-(RMSE skill, heavy-rain CSI, anti-blur, shock causality, null test, speed), computed with the
-kit's own scoring code on held-out years. Splits: train 2005-2017, val 2018-2019, test 2020-2021.
-
-## Before every push
+## 5. Checks before every push
 
 ```bash
-python tests/test_engine.py
-python scripts/check_repo.py     # must say 15/15
+python tests/test_engine.py                          # shapes, validity, zero shock == no shock, speed
+python scripts/check_repo.py                         # judge's repo scan on tracked files: must say 15/15
+python -m monsoon_r1.schema_validator http://127.0.0.1:8000
 ```
 
-Repo scan rules that bite (details in `docs/GRADING_NOTES.md`):
-- No Python file outside the server path may contain the route string of the simulate endpoint
-  (it would be treated as inference code). The dashboard is JS for this reason.
-- No calendar dates or weather-data-source names in `serve.py` or `twin/` (comments included).
-- No `.nc` files and no multi-year `.npy/.npz` archives in the repo.
+Repo-scan rules that bite (`docs/GRADING_NOTES.md`): no Python file outside the server path may contain the route
+string of the simulate endpoint; no calendar dates or weather-data-source names in `serve.py` or `twin/`; no `.nc`
+files and no multi-year `.npy/.npz` arrays in the repo.
 
-## Submission
+## 6. Repository map
 
-- Served model: `artifacts/active.json` -> `models/r3_cnn.pt` (run 3 CNN with the two-part rain head). Why:
-  `docs/RESULTS_RUN_3.md`. Weights are plain git files (no LFS); the server falls back to a baseline if a model cannot load.
-- Brief: `BRIEF.pdf` (2 pages), generated by `python docs/brief/make_brief.py` (edit the text there, rerun, commit).
-- Spec: `docs/SPEC.md` is the source of truth; change it first.
+| Path | What |
+|---|---|
+| `serve.py` | Server entry point (FastAPI) |
+| `twin/` | Inference package: engine (shock, clamps, fallback), model families, codec, rollout |
+| `training/` | Data split, training, post-processing fitters, local grader, reports (never imported by the server) |
+| `artifacts/` | Everything the server loads: `active.json`, `models/*.pt`, `climatology.npz`, `stats.json`, `damped.json` |
+| `dashboard/`, `frontend/` | Multiverse Map: prebuilt static app and its source |
+| `docs/` | Spec, results, model explanations, grading notes, dashboard contract, brief generator (`docs/brief/`) |
+| `scripts/`, `tests/` | Repo scan, sweep/run launchers, engine contract tests |
+| `runs/leaderboard.csv` | Every evaluation we ran, with all score components |
 
-## Model family sweep
-
-Results and lessons: `docs/RESULTS_SWEEP_1.md`. How everything works: `docs/HOW_THE_MODELS_WORK.md`, `docs/MODEL_FAMILIES.md`,
-`docs/PHYSICS_HYBRID.md`. Finish an interrupted sweep: `bash scripts/resume_sweep.sh <python>`.
-`train_nn.py` saves full training state every epoch (`runs/ckpt/`), so `--resume` continues after a shutdown.
-
-## First baselines (val 2018-2019, auto-scored parts out of 70)
-
-| Model | events | random | notes |
-|---|---|---|---|
-| persistence | 21.3 | 19.6 | fails the day-4 gate |
-| climatology | 9.7 | 10.0 | ignores shocks |
-| damped anomaly | 43.7 | 42.3 | safe fallback |
-| CNN, 2-epoch smoke test | 52.0 | 57.1 | pipeline check only |
-
-Licence: code MIT. Data: modified ERA5 (Copernicus, CC BY 4.0) via the organisers' kit.
+Licence: code MIT. Data: modified ERA5 (Copernicus Climate Change Service, CC BY 4.0) via the organisers' kit.

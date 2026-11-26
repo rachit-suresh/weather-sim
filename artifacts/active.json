@@ -1,1 +1,1 @@
-{"model": "neural", "checkpoint": "models/r3_cnn.pt"}
+{"model": "neural", "checkpoint": "models/final_cnn.pt"}

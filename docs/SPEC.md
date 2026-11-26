@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.11 (2026-11-26). **Status:** active.
+**Version:** 1.12 (2026-11-27). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -32,6 +32,9 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - `CON-8` (organisers) `artifacts/active.json` points at a real trained model (never the damped baseline or the
   starter's placeholder). The kit's schema validator passes against `python serve.py --port 8000` before every push.
 - `CON-9` (organisers) The 2-page brief is a PDF in the repo: `BRIEF.pdf` at the root. Deadline: 2026-11-27 10:00.
+- `CON-10` (organisers: "a README on how to train and run") `README.md` gives the exact commands to (1) run the server and
+  dashboard offline, (2) rebuild the artifacts and reproduce the SUBMITTED model from the training data, (3) run the
+  checks. No Git LFS instructions (`CON-7`). Release freeze: nothing is merged to `main` after 2026-11-27 08:30.
 
 ## 2. Architecture
 
@@ -57,7 +60,13 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   2019-05-03, cyclone Vayu 2019-06-12, monsoon onset 2019-06-08, north India heat 2019-06-02;
   test: cyclone Amphan 2020-05-20, cyclone Nisarga 2020-06-03, cyclone Tauktae 2021-05-17, cyclone Yaas 2021-05-26.
 - `VAL-3` Every evaluation appends one row to `runs/leaderboard.csv`.
-- `VAL-4` Before submission: retrain the chosen recipe on all years 2005-2021 (phase 3).
+- `VAL-4` Final model: the chosen recipe (`r3_cnn`: CNN, run 2 recipe + `RAIN-3`, seed 0) retrained on ALL years
+  2005-2021 (`--train-years 2005-2021 --final`): anomaly scales from all years, same curriculum, and the weights after
+  the LAST epoch are kept (no held-out years remain to select on). Acceptance before it is served: kit validator
+  passes, zero shock == null, valid outputs, reach probe local (day-1 max reach <= 11 cells), mean auto score on
+  2018-19 and 2020-21 windows (now in-sample) >= `r3_cnn`'s minus 0.5, Amphan and June-2019 cases sane. If any check
+  fails, `r3_cnn` stays the served model.
+  **Result: all checks passed; `final_cnn` is served** (`docs/RESULTS_RUN_3.md`).
 
 ## 4. Representation (decision B)
 
@@ -117,7 +126,10 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 
 ## 9. Runtime (decision G)
 
-- `RUN-1` Phase 3: load order ONNX (onnxruntime) -> torch `state_dict` -> damped baseline. No numpy rewrite.
+- `RUN-1` ONNX export: **dropped** (team decision 2026-11-27, too much change this late). Load order: torch
+  `state_dict` -> damped baseline (`ARC-3`). No numpy rewrite.
+- `RUN-4` torch-version tolerance: load checkpoints with `weights_only=True` and, if the installed torch does not
+  support that argument (torch < 1.13), load again without it. Checkpoints hold only tensors and plain Python values.
 - `RUN-2` torch threads = 4 (env `TWIN_THREADS`). Model loads once at import; warm-up before `/health` is ready.
 - `RUN-3` Every model is deterministic: no state between calls, no unseeded randomness.
 
@@ -168,7 +180,8 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   years they score 67.38 (a), 66.10 (b), 67.00 (c) with shocks 12.0-12.4 vs 13.12. (b) is best on validation (68.29).
 - **Phase 2c:** ensembles of the best models (equal-weight average, and with `restore_variance`), and
   `SHP-6` CRPS ensemble (E3) on the best family.
-- **Phase 3:** `VAL-4` final retrain, `RUN-1` ONNX chain, brief.
+- **Phase 3 (final release v1.1):** `VAL-4` final retrain + acceptance, `RUN-4`, `CON-10` README, brief says the model
+  is trained on 2005-2021, final gate on a fresh clone (validator, repo scan 15/15, tests, dashboard live), tag `v1.1`.
 
 ## 13. Known risks
 
@@ -189,6 +202,9 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.4 (2026-11-26): D4 + edge relax screening added; r3_unet reuses p2_unet_d4st (identical run).
 - 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
 - 1.6 (2026-11-26): D4 + edge relax wins the screening; run 3b adds it to the other 4 families.
+- 1.12 (2026-11-27): final release plan approved: `VAL-4` made concrete (all years, last epoch, acceptance checks);
+  `RUN-1` ONNX dropped; new `RUN-4` torch tolerance and `CON-10` README + release freeze. Spec gap found: README
+  requirement was missing, so the README still described Git LFS.
 - 1.11 (2026-11-26): phase 2d result recorded: no blend replaces r3_cnn.
 - 1.10 (2026-11-26): phase 2d CNN + physics blend experiment and its acceptance rule.
 - 1.9 (2026-11-26): spec error: `IMP-1` described a rain-deficit crop panel, but the team's merged dashboard implements

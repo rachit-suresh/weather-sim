@@ -153,7 +153,8 @@ def build(out: Path):
             "<b>Rain that looks like rain.</b> A two-part rain head (\"does it rain?\" + \"how much?\") gives truly dry cells and sharp "
             "downpours: heavy-rain skill 0.10-0.11 on held-out years (the judge's full mark needs 0.10).",
             "<b>Chosen by evidence.</b> 30+ models from 9 families scored with the organisers' own scoring code on 72 windows "
-            "(extreme events, ordinary days, named cyclones and floods); final pick confirmed on untouched 2020-21 data."])
+            "(extreme events, ordinary days, named cyclones and floods); final pick confirmed on untouched 2020-21 data, then the "
+            "same recipe retrained on all 2005-21 data for the submitted weights."])
 
     s.append(P("1. Model design", h2))
     s += B(["<b>State.</b> 6 variables on the 32 x 36 grid. The network works on <i>anomalies</i>: value minus the 2005-21 daily "
@@ -178,7 +179,7 @@ def build(out: Path):
             "<b>Rejected after testing.</b> Rain quantile mapping raised heavy-rain hits but cost 6-17 points on ordinary days (rain "
             "in the wrong place, exaggerated shock responses); blending toward persistence and variance rescaling did not help."])
 
-    rows = [["Model (validation 2018-19 unless noted)", "Events", "Ordinary days", "Named events", "Heavy-rain skill", "Shocks /15"],
+    rows = [["Model (trained 2005-17; scored on held-out 2018-19 unless noted)", "Events", "Ordinary days", "Named events", "Heavy-rain skill", "Shocks /15"],
             ["Persistence (\"same as today\")", "21.3", "19.6", "-", "-0.04", "11.3 (fails gate)"],
             ["Damped persistence (no ML)", "43.7", "42.3", "-", "0.01", "11.3"],
             ["CNN, plain squared-error loss", "62.4", "62.1", "-", "0.06", "13.5"],
@@ -187,7 +188,9 @@ def build(out: Path):
             ["Final CNN on <b>untouched 2020-21</b>", "<b>68.1</b>", "<b>67.7</b>", "<b>68.1</b>", "<b>0.11</b>", "<b>13.1</b>"]]
     s.append(Spacer(1, 3))
     s.append(KeepTogether([table(rows, [5.4 * cm, 1.4 * cm, 1.9 * cm, 1.9 * cm, 2.3 * cm, 4.2 * cm], bold_rows=(5, 6)),
-                           P("Automatic score out of 70 = error skill 30 + heavy-rain hits 15 + anti-blur 10 + shock behaviour 15, computed with "
+                           P("Submitted weights: the final CNN recipe retrained on all 2005-21 data (more and more recent years; "
+                             "no held-out years remain, so the scores shown are from the 2005-17 version). "
+                             "Automatic score out of 70 = error skill 30 + heavy-rain hits 15 + anti-blur 10 + shock behaviour 15, computed with "
                              "the organisers' <font face='Courier'>monsoon_r1.scoring</font>. Named events: Kerala floods 2018, cyclones Titli, "
                              "Gaja, Fani, Vayu, onset and heat 2019 (test: Amphan, Nisarga, Tauktae, Yaas).", small)]))
 
@@ -239,7 +242,7 @@ def build(out: Path):
                "received almost twice the rain that week.", small))
 
     s.append(P("7. How we built it", h2))
-    s += B(["<b>Spec-driven.</b> <font face='Courier'>docs/SPEC.md</font> (v1.9) holds every decision with an ID; each change goes into the "
+    s += B(["<b>Spec-driven.</b> <font face='Courier'>docs/SPEC.md</font> (v1.12) holds every decision with an ID; each change goes into the "
             "spec first, then code. Problems are logged as code errors or spec errors (e.g. a soft-train / hard-inference rain gate "
             "was a spec error, caught by screening and fixed).",
             "<b>Reproducible.</b> Retraining the same recipe reproduces scores within 0.2 points; per-epoch checkpoints resume after "

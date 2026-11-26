@@ -58,8 +58,14 @@ class Tensors:
         return hist, self.CF[fut], self.SC[fut], self.Z[fut], self.heavy[fut], self.wet[fut]
 
 
-def anomaly_std(rain_mode: str) -> list[float]:
-    ds = load(); m = ds.mask(TRAIN_YEARS)
+def parse_years(s: str) -> range:
+    """'2005-2017' -> range(2005, 2018)."""
+    a, b = (int(x) for x in s.split("-"))
+    return range(a, b + 1)
+
+
+def anomaly_std(rain_mode: str, years=TRAIN_YEARS) -> list[float]:
+    ds = load(); m = ds.mask(years)
     c = Codec(rain_mode=rain_mode)
     z = np.concatenate([c.encode(ds.data[i:i + 512], ds.doy[i:i + 512].astype(float))
                         for i in np.where(m)[0][::512]])                  # anomaly with std 1 -> raw anomaly
@@ -162,6 +168,9 @@ def main(argv=None):
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--no-eval", action="store_true")
+    ap.add_argument("--train-years", default="2005-2017", help="spec VAL-4: 2005-2021 for the final model")
+    ap.add_argument("--final", action="store_true",
+                    help="spec VAL-4: keep the weights after the LAST epoch (no held-out years to select on)")
     ap.add_argument("--resume", action="store_true", help="continue from runs/ckpt/<name>_last.pt if it exists")
     a = ap.parse_args(argv)
     if a.rain_head == "two_part" and a.rain != "sqrt":
@@ -170,7 +179,8 @@ def main(argv=None):
     torch.manual_seed(a.seed); np.random.seed(a.seed); torch.set_num_threads(a.threads)
     dev = torch.device(a.device)
     codec = Codec(rain_mode=a.rain)
-    codec.anom_std = anomaly_std(a.rain)
+    train_years = parse_years(a.train_years)
+    codec.anom_std = anomaly_std(a.rain, train_years)
     T = Tensors(codec, dev, a.latlon)
     mean, std = load_stats()
     rcfg = {}
@@ -185,14 +195,14 @@ def main(argv=None):
     wd = a.weight_decay if a.weight_decay is not None else (1e-3 if a.latlon else 1e-4)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=wd)
     cur = parse_curriculum(a.curriculum)
-    total_steps = sum(n_ep * -(-len(window_starts(T.ds, TRAIN_YEARS, u)) // a.batch) for u, n_ep in cur)
+    total_steps = sum(n_ep * -(-len(window_starts(T.ds, train_years, u)) // a.batch) for u, n_ep in cur)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=total_steps + 1, pct_start=0.05)
     lat_w = torch.tensor(np.cos(np.deg2rad(LAT)) / np.cos(np.deg2rad(LAT)).mean(), dtype=torch.float32, device=dev)[:, None]
     ch_w = torch.tensor([float(x) for x in a.channel_weights.split(",")], device=dev)
     ps = PhysScale(codec, dev) if a.shock_loss > 0 else None
     bce = torch.nn.BCEWithLogitsLoss()
     print(f"{a.family} {net_cfg} params={n_par:,} device={dev} rain={a.rain} curriculum={cur} "
-          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd}")
+          f"train_years={a.train_years} final={a.final} options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd}")
 
     best, out_path = float("inf"), ARTIFACTS / "models" / f"{a.name}.pt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -208,7 +218,7 @@ def main(argv=None):
         np.random.set_state(st["np_rng"]); torch.set_rng_state(st["torch_rng"])
         print(f"resumed {a.name} after epoch {done_ep} (best val {best:.4f})", flush=True)
     for unroll, n_ep in cur:
-        tr_idx = window_starts(T.ds, TRAIN_YEARS, unroll)
+        tr_idx = window_starts(T.ds, train_years, unroll)
         va_idx = window_starts(T.ds, VAL_YEARS, unroll, stride=3)
         for _ in range(n_ep):
             ep += 1
@@ -238,7 +248,8 @@ def main(argv=None):
                     vl += loss_fn(pv, true, lat_w, ch_w).item() * len(hist)          # plain MSE, inference mode
             vl /= len(va_idx)
             print(f"ep {ep:3d} unroll {unroll}  train {tot / len(tr_idx):.4f}  val {vl:.4f}  {time.time() - t0:.0f}s", flush=True)
-            if unroll == cur[-1][0] and vl < best:
+            is_last = ep == sum(n for _, n in cur)
+            if (a.final and is_last) or (not a.final and unroll == cur[-1][0] and vl < best):
                 best = vl
                 torch.save({"family": a.family, "net_config": net_cfg, "codec": codec.to_dict(),
                             "inputs": {"latlon": a.latlon}, "rollout": rcfg,

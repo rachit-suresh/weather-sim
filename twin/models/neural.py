@@ -26,7 +26,10 @@ class NeuralModel(TwinModel):
         path = Path(checkpoint)
         if not path.is_absolute():
             path = ARTIFACTS / path
-        ck = torch.load(path, map_location="cpu", weights_only=True)
+        try:                                                        # spec RUN-4: tolerate torch < 1.13
+            ck = torch.load(path, map_location="cpu", weights_only=True)
+        except TypeError:
+            ck = torch.load(path, map_location="cpu")
         self.torch = torch
         self.name = f"{ck['family']}:{path.stem}"
         self.codec = Codec.from_dict(ck["codec"])
