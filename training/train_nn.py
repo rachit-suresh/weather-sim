@@ -17,6 +17,7 @@ import time
 
 import numpy as np
 import torch
+from monsoon_r1 import contract as C
 
 from twin.calendar import clim_index, sincos
 from twin.climatology import load_static
@@ -106,19 +107,30 @@ class PhysScale:
         return torch.cat([d[:, :, :TP], rain[:, :, None], d[:, :, TP + 1:]], dim=2)
 
 
-def shock_penalty(net, hist, cf, sc, fixed, unroll, rcfg, pred, ps: PhysScale):
+def shock_penalty(net, hist, cf, sc, fixed, unroll, rcfg, pred, ps: PhysScale, channels: str = "all",
+                  hinge: float = SHOCK_LIMIT, box_mode: str = "random", cf_last=None):
     """SHP-8: warm-ocean-style shock (+3 K, +15% water vapour) in a random 12x12 box on the last input day;
-    penalise any response above SHOCK_LIMIT judge-std (the judge fails a shock above 5)."""
-    i0 = np.random.randint(0, NLAT - SHOCK_BOX + 1); j0 = np.random.randint(0, NLON - SHOCK_BOX + 1)
-    box = torch.zeros(NLAT, NLON, device=hist.device); box[i0:i0 + SHOCK_BOX, j0:j0 + SHOCK_BOX] = 1.0
+    penalise any response above SHOCK_LIMIT judge-std (the judge fails a shock above 5).
+    V2-F3 options: channels "tp" (rain only), another hinge, box "warm_ocean" (the judge's Bay of Bengal box, with
+    tcwv from the last input day's climatology `cf_last` [B,6,H,W], exactly like the judge's make_shock)."""
+    if box_mode == "warm_ocean":
+        box = torch.as_tensor(C.box_mask(C.BOX_BAY_OF_BENGAL), dtype=hist.dtype, device=hist.device)
+        clim_tcwv = cf_last[:, TCWV]
+    else:
+        i0 = np.random.randint(0, NLAT - SHOCK_BOX + 1); j0 = np.random.randint(0, NLON - SHOCK_BOX + 1)
+        box = torch.zeros(NLAT, NLON, device=hist.device); box[i0:i0 + SHOCK_BOX, j0:j0 + SHOCK_BOX] = 1.0
+        clim_tcwv = cf[:, 0, TCWV]
     last = hist[:, -1]
-    tcwv_phys = last[:, TCWV] * ps.anom[TCWV] + (cf[:, 0, TCWV] * ps.std[TCWV] + ps.mean[TCWV])
+    tcwv_phys = last[:, TCWV] * ps.anom[TCWV] + (clim_tcwv * ps.std[TCWV] + ps.mean[TCWV])
     pert = torch.zeros_like(last)
     pert[:, T2M] = box * (3.0 / ps.anom[T2M])
     pert[:, TCWV] = box * (0.15 * tcwv_phys / ps.anom[TCWV])
     hs = torch.cat([hist[:, :2], (last + pert)[:, None]], dim=1)
     shocked = rollout(net, hs, cf, sc, fixed, unroll, rcfg, mode="train")
-    return (torch.relu(ps.diff_std(shocked, pred, cf) - SHOCK_LIMIT) ** 2).mean()
+    z = ps.diff_std(shocked, pred, cf)
+    if channels == "tp":
+        z = z[:, :, TP]
+    return (torch.relu(z - hinge) ** 2).mean()
 
 
 def parse_net_config(s: str) -> dict:
@@ -156,6 +168,10 @@ def main(argv=None):
     ap.add_argument("--rain-head", default="none", choices=["none", "two_part"], help="RAIN-3 D4")
     ap.add_argument("--rain-bce", type=float, default=0.5, help="RAIN-3 weight of the rain/no-rain loss")
     ap.add_argument("--shock-loss", type=float, default=0.0, help="SHP-8 weight of the shock stability guard")
+    ap.add_argument("--shock-channels", default="all", choices=["all", "tp"], help="V2-F3: guard all channels or rain only")
+    ap.add_argument("--shock-hinge", type=float, default=SHOCK_LIMIT, help="V2-F3: penalty starts above this judge std")
+    ap.add_argument("--shock-box", default="random", choices=["random", "warm_ocean"],
+                    help="V2-F3: random 12x12 box (SHP-8) or the judge's warm_ocean Bay of Bengal box")
     ap.add_argument("--weight-decay", type=float, default=None, help="default 1e-4, or 1e-3 with --latlon")
     ap.add_argument("--channel-weights", default="1,1,1,1,1,1")
     ap.add_argument("--seed", type=int, default=0)
@@ -201,7 +217,8 @@ def main(argv=None):
     ps = PhysScale(codec, dev) if a.shock_loss > 0 else None
     bce = torch.nn.BCEWithLogitsLoss()
     print(f"{a.family} {net_cfg} params={n_par:,} device={dev} rain={a.rain} curriculum={cur} "
-          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd}")
+          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} "
+          f"shock_channels={a.shock_channels} shock_hinge={a.shock_hinge} shock_box={a.shock_box} wd={wd}")
 
     best, out_path = float("inf"), ARTIFACTS / "models" / f"{a.name}.pt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -224,6 +241,7 @@ def main(argv=None):
             if ep <= done_ep:                                            # finished before the restart
                 continue
             t0 = time.time(); net.train(); tot = 0.0
+            n_guard, n_guard_on, guard_sum = 0, 0, 0.0
             perm = np.random.permutation(tr_idx)
             for bi, i in enumerate(range(0, len(perm), a.batch)):
                 hist, cf, sc, true, heavy, wet = T.batch(perm[i:i + a.batch], unroll)
@@ -232,7 +250,11 @@ def main(argv=None):
                 if logits is not None:                                   # RAIN-3: learn "will it rain?"
                     loss = loss + a.rain_bce * bce(logits, wet.to(logits.dtype))
                 if ps is not None and bi % 4 == 0:                       # SHP-8: every 4th batch
-                    loss = loss + a.shock_loss * shock_penalty(net, hist, cf, sc, T.fixed, unroll, rcfg, pred, ps)
+                    cf_last = T.CF[torch.as_tensor(perm[i:i + a.batch], device=dev)] if a.shock_box == "warm_ocean" else None
+                    sp = shock_penalty(net, hist, cf, sc, T.fixed, unroll, rcfg, pred, ps, a.shock_channels,
+                                       a.shock_hinge, a.shock_box, cf_last)
+                    n_guard += 1; n_guard_on += int(sp.item() > 0); guard_sum += sp.item()
+                    loss = loss + a.shock_loss * sp
                 opt.zero_grad(); loss.backward()
                 torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
                 opt.step()
@@ -246,7 +268,8 @@ def main(argv=None):
                     pv = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="infer")
                     vl += loss_fn(pv, true, lat_w, ch_w).item() * len(hist)          # plain MSE, inference mode
             vl /= len(va_idx)
-            print(f"ep {ep:3d} unroll {unroll}  train {tot / len(tr_idx):.4f}  val {vl:.4f}  {time.time() - t0:.0f}s", flush=True)
+            print(f"ep {ep:3d} unroll {unroll}  train {tot / len(tr_idx):.4f}  val {vl:.4f}  {time.time() - t0:.0f}s"
+                  + (f"  guard on {n_guard_on}/{n_guard} mean {guard_sum / max(n_guard, 1):.2e}" if n_guard else ""), flush=True)
             if unroll == cur[-1][0] and vl < best:
                 best = vl
                 torch.save({"family": a.family, "net_config": net_cfg, "codec": codec.to_dict(),

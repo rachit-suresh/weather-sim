@@ -234,7 +234,7 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   Concrete (run `v2_f3`, branch `v2/f-guard`):
   - Flags (new in `train_nn`, defaults = current `SHP-8`, so other runs do not change): `--shock-channels all|tp`
     (default `all`), `--shock-hinge H` (default 4.0), `--shock-box random|warm_ocean` (default `random`). F3 uses
-    `--shock-loss 3 --shock-channels tp --shock-hinge 3.5 --shock-box warm_ocean`, every 4th batch as in `SHP-8`.
+    `--shock-loss 20 --shock-channels tp --shock-hinge 3.5 --shock-box warm_ocean`, every 4th batch as in `SHP-8`.
   - Perturbation = the judge's `make_shock("warm_ocean")` (monsoon_r1.scoring): on the last input day only, +3 K t2m
     and +15% of that day's physical tcwv on every cell of `BOX_BAY_OF_BENGAL` (lat 8-20, lon 82-94: 12 x 12 cells,
     land cells included), converted to anomaly units with the codec (t2m and tcwv are linear). tcwv uses the
@@ -245,12 +245,15 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
     judge pass to `causality_checks`).
   - Penalty = `W x mean over batch, lead days and cells of relu(|response_tp| / std_tp - 3.5)^2`; zero while every
     cell stays under 3.5 judge std.
-  - W = 3, chosen by reasoning, not on val/test: E7b's all-channel guard (`--shock-loss 20`, mean over 6 channels)
-    was in practice rain-only (warm_ocean moves t2m by 0.22 and tcwv by 0.37 std at the start, far below the hinge), so
-    its per-rain-cell strength was 20 / 6 = 3.3; rounded down to 3 because the lower hinge (3.5 vs 4) already makes
-    r3_cnn's worst cells (4.1-4.6 std) cost 2-4x more. Per violating heavy-rain cell this is ~1.5-6x the gradient of
-    the data loss, and zero elsewhere. Pre-run check on training windows only: report the share of guard batches
-    with a non-zero penalty at the warm start (if it is 0, the run is a no-op and the spec is revisited).
+  - W = 20 (amended after the pre-run check, still by reasoning on training windows only, never val/test). First
+    guess W = 3: E7b's all-channel guard (`--shock-loss 20`, mean over 6 channels) was in practice rain-only
+    (warm_ocean moves t2m by 0.22 and tcwv by 0.37 std at the start, far below the hinge), so its per-rain-cell
+    strength was 20 / 6 = 3.3. Pre-run check at the warm start (24 training batches per stage): the guard is non-zero in
+    24/24 batches, but with W = 3 its gradient is only 2.3% (unroll 4) / 0.8% (unroll 8) of the data-loss gradient
+    (median; max 14% / 3%), because only a few cells per batch exceed the hinge: a near no-op. Rule used instead: the
+    guard gradient should be about 10% of the data gradient on guard batches (a nudge that cannot dominate the
+    forecast loss, the E7b lesson), i.e. W = 13 (unroll 4) to 37 (unroll 8); W = 20 sits between (median 15% / 5%,
+    max 94% / 18%), applied on every 4th batch only.
   - Diagnostic (reported, not used to choose): per warm_ocean event window, the worst-case |shocked - base| in judge
     std over all channels, cells and 10 days (the number the judge compares with 5), val and test.
 - `V2-F4` Error growth, input noise: during unrolled training, add small Gaussian noise to the model's own state before
@@ -266,6 +269,8 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - v2 branch `v2/f-guard` (2026-11-27): `V2-F3` made concrete (flags `--shock-channels`, `--shock-hinge`,
   `--shock-box`; judge warm_ocean box and std; hinge 3.5; W = 3 by reasoning). Spec gap fixed: `SHP-8` used a random
   12 x 12 box and the next target day's climatology for the tcwv shock; F3 uses the judge's box and the last input day.
+- v2 branch `v2/f-guard` (2026-11-27): spec error (design) in `V2-F3`: W = 3 was set by per-cell strength, but the
+  pre-run check showed a guard gradient of only 1-2% of the data gradient; W = 20 by a gradient-share rule.
 
 - v2 branch (2026-11-27): section 14b adds fine-tune round F (`V2-F-P`, `V2-F0`..`V2-F5`) after E2-E8 found no winner.
   `train_nn --warm-start` added on the research branch for it (name-and-shape tensor copy, ignored on resume).
