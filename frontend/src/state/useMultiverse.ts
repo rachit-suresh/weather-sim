@@ -13,6 +13,8 @@ import type { IslandTask } from "@/components/kokonutui/status-island";
 export interface QueuedShock extends PerturbationSpec {
   id: number;
   label: string;
+  /** JudgePreset id when this shock is one part of a multi-field judge preset. */
+  group?: string;
 }
 
 export interface PaintedShock {
@@ -61,7 +63,62 @@ export const PRESETS: Preset[] = [
   },
 ];
 
+/* ── official evaluation shocks (same definitions as the judge's scoring kit) ──────────────────
+   A box covers every cell whose CENTRE lies inside [lat0, lat1] x [lon0, lon1].
+   Percent shocks are taken from the last input day (init_states[2]), exactly like the judge. */
+export interface JudgePreset {
+  id: string;
+  label: string;
+  blurb: string;
+  box: [number, number, number, number];   // lat0, lat1, lon0, lon1 (degrees)
+  shocks: { field: VarKey; value: number; valueMode: "abs" | "pct" }[];
+}
+
+export const JUDGE_PRESETS: JudgePreset[] = [
+  {
+    id: "judge_warm_ocean",
+    label: "Warm Bay of Bengal (Judge)",
+    blurb: "+3 K on t2m and +15% on tcwv over 8–20°N, 82–94°E (judge's warm_ocean shock)",
+    box: [8, 20, 82, 94],
+    shocks: [
+      { field: "t2m", value: 3, valueMode: "abs" },
+      { field: "tcwv", value: 15, valueMode: "pct" },
+    ],
+  },
+  {
+    id: "judge_monsoon_stall",
+    label: "Monsoon Stall (Judge)",
+    blurb: "−40% on u10 and v10 over 8–20°N, 65–75°E (judge's monsoon_stall shock)",
+    box: [8, 20, 65, 75],
+    shocks: [
+      { field: "u10", value: -40, valueMode: "pct" },
+      { field: "v10", value: -40, valueMode: "pct" },
+    ],
+  },
+  {
+    id: "zero_shock",
+    label: "Zero Shock (Sanity Check)",
+    blurb: "Sends an all-zero perturbation tensor: the branch must equal Prime exactly (judge's null test)",
+    box: [GRID.lat[0], GRID.lat[NR - 1], GRID.lon[0], GRID.lon[NC - 1]],
+    shocks: [{ field: "t2m", value: 0, valueMode: "abs" }],
+  },
+];
+
+export function boxMask([lat0, lat1, lon0, lon1]: JudgePreset["box"]): [number, number, number][] {
+  const out: [number, number, number][] = [];
+  for (let r = 0; r < NR; r++) {
+    for (let c = 0; c < NC; c++) {
+      const lat = GRID.lat[r], lon = GRID.lon[c];
+      if (lat >= lat0 && lat <= lat1 && lon >= lon0 && lon <= lon1) out.push([r, c, 1]);
+    }
+  }
+  return out;
+}
+
 export const MAX_PERTURBATIONS = 24;
+
+/** Prefix of every connection/input error: the UI never substitutes synthetic data. */
+export const OFFLINE_BANNER = "Backend offline or demo_windows.json missing";
 
 let shockId = 1;
 let rippleId = 1;
@@ -77,7 +134,6 @@ export function useMultiverse() {
 
   const [windows, setWindows] = useState<DemoWindow[]>([]);
   const [windowIdx, setWindowIdxState] = useState(0);
-  const [windowsFromFixture, setWindowsFromFixture] = useState(false);
   const [steps, setStepsState] = useState(10);
   const [maxSteps, setMaxSteps] = useState(14);
   const [landSeaMask, setLandSeaMask] = useState<number[][]>(() => GRID.land_sea_mask);
@@ -157,7 +213,7 @@ export function useMultiverse() {
 
       const isReady = h.status === "ready";
       setOnline(isReady);
-      setModelName(meta.model_name || h.model_name);
+      setModelName(h.model_name || meta.model_name);
       setMaxSteps(meta.max_steps);
       setLandSeaMask(meta.land_sea_mask);
 
@@ -191,8 +247,10 @@ export function useMultiverse() {
       }
       setOnline(false);
       setBooted(true);
+      setModelName("—");
+      setTimeline(null);                 // never leave an older run on screen as if it were current
       const msg = e instanceof SimulateError ? e.message : String(e);
-      setError(msg);
+      setError(`${OFFLINE_BANNER}: ${msg}`);
       patchTask(tid, {
         label: "Backend error",
         detail: msg,
@@ -208,17 +266,14 @@ export function useMultiverse() {
   useEffect(() => {
     const ac = new AbortController();
     loadDemoWindows(ac.signal)
-      .then(({ windows: loaded, fromFixture }) => {
+      .then((loaded) => {
         setWindows(loaded);
-        setWindowsFromFixture(fromFixture);
-        if (loaded[0]) {
-          void loadConnectionAndBaseline(backendUrl, loaded[0], steps);
-        }
+        void loadConnectionAndBaseline(backendUrl, loaded[0], steps);
       })
       .catch((e) => {
         if ((e as Error).name !== "AbortError") {
           setBooted(true);
-          setError(String(e));
+          setError(`${OFFLINE_BANNER}: ${(e as Error).message || String(e)}. No input windows loaded, nothing is simulated.`);
         }
       });
     return () => ac.abort();
@@ -346,14 +401,46 @@ export function useMultiverse() {
   }, [addRipple, painted]);
 
   const removeShock = useCallback((id: number) => {
-    setQueue((prev) => prev.filter((q) => q.id !== id));
+    setQueue((prev) => {
+      const target = prev.find((q) => q.id === id);
+      // parts of a judge preset are only meaningful together: removing one removes the whole preset
+      return target?.group ? prev.filter((q) => q.group !== target.group) : prev.filter((q) => q.id !== id);
+    });
+  }, []);
+
+  const addJudgePreset = useCallback((p: JudgePreset) => {
+    const mask = boxMask(p.box);
+    const r0 = Math.round(mask.reduce((s, [r]) => s + r, 0) / mask.length);
+    const c0 = Math.round(mask.reduce((s, [, c]) => s + c, 0) / mask.length);
+    setQueue((prev) => {
+      if (prev.some((q) => q.group === p.id)) return prev;
+      if (prev.length + p.shocks.length + (painted ? 1 : 0) > MAX_PERTURBATIONS) return prev;
+      return [...prev, ...p.shocks.map((s) => {
+        const unit = s.valueMode === "pct" ? "%" : GRID.units[s.field] === "Pa" ? "hPa" : GRID.units[s.field];
+        return {
+          id: shockId++,
+          group: p.id,
+          label: `${p.label} · ${s.field.toUpperCase()} ${s.value > 0 ? "+" : ""}${s.value}${unit}`,
+          field: s.field,
+          value: s.value,
+          valueMode: s.valueMode,
+          mask,
+          center: [r0, c0] as [number, number],
+        };
+      })];
+    });
+    addRipple(r0, c0, "select");
+  }, [addRipple, painted]);
+
+  const removeJudgePreset = useCallback((presetId: string) => {
+    setQueue((prev) => prev.filter((q) => q.group !== presetId));
   }, []);
 
   /* ── the live POST /simulate branch call ───────────────────────────────── */
   const run = useCallback(async () => {
     if (!activeWindow || running) return;
-    const specs: PerturbationSpec[] = queue.map(({ id, label, ...p }) => {
-      void id; void label;
+    const specs: PerturbationSpec[] = queue.map(({ id, label, group, ...p }) => {
+      void id; void label; void group;
       return p;
     });
     if (painted && painted.mask.size) {
@@ -400,6 +487,16 @@ export function useMultiverse() {
       }, ac.signal);
       if (seq !== reqSeqRef.current) return;
 
+      // largest |branched - prime| over every channel, day and cell (raw backend units)
+      let maxAbsDiff = 0;
+      for (const v of VAR_KEYS) {
+        const b = t.branched[v], p = t.prime[v];
+        for (let i = 0; i < b.length; i++) {
+          const d = Math.abs(b[i] - p[i]);
+          if (d > maxAbsDiff) maxAbsDiff = d;
+        }
+      }
+
       setOnline(true);
       setTimeline(t);
       setDay(0);
@@ -407,8 +504,8 @@ export function useMultiverse() {
       setPlaying(true);
       addRipple(er, ec, "shock");
       patchTask(tid, {
-        label: "Branch resolved",
-        detail: `${t.inferenceMs.toFixed(0)} ms infer · ${t.runId}`,
+        label: maxAbsDiff === 0 ? "Branch == Prime (zero change)" : "Branch resolved",
+        detail: `${t.inferenceMs.toFixed(0)} ms infer · ${t.runId} · max |Δ| = ${maxAbsDiff === 0 ? "0" : maxAbsDiff.toPrecision(3)}`,
         status: "done",
         action: { label: "Replay", onClick: () => { setDay(0); setPlaying(true); } },
       });
@@ -418,7 +515,9 @@ export function useMultiverse() {
         return;
       }
       const msg = e instanceof SimulateError ? e.message : String(e);
-      setError(msg);
+      const unreachable = e instanceof SimulateError && e.status === undefined && msg.startsWith("Cannot reach");
+      if (unreachable) setOnline(false);
+      setError(unreachable ? `${OFFLINE_BANNER}: ${msg}` : msg);
       patchTask(tid, {
         label: "Branch failed",
         detail: msg,
@@ -475,14 +574,14 @@ export function useMultiverse() {
 
   return {
     backendUrl, setBackendUrl,
-    windows, windowIdx, setWindowIdx, activeWindow, windowsFromFixture,
+    windows, windowIdx, setWindowIdx, activeWindow,
     steps, setSteps, maxSteps, landSeaMask,
     timeline, running, booted, error, tasks, dismissTask,
     view, setView, variable, setVariable, day, setDay, lens, setLens, playing, setPlaying,
     paintMode, setPaintMode, paintField, setField,
     paintValue, setDeltaValue, paintValueMode, setValueMode,
     brushRadius, setBrushRadius, painted, onPaint, onPaintEnd, clearPaint, commitPaintedToQueue,
-    queue, addPreset, removeShock, perturbationCount,
+    queue, addPreset, removeShock, addJudgePreset, removeJudgePreset, perturbationCount,
     run, reset, selected, selectCell, ripples, addRipple,
     showWind, setShowWind, showCities, setShowCities, showScenery, setShowScenery, focusRegion, setFocusRegion,
     modelName, online, diverged, missionStage,

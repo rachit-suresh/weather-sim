@@ -1,145 +1,97 @@
-# `/simulate` contract — Multiverse Map dashboard
+# Backend contract: what the Multiverse Map dashboard sends and expects
 
-**Owner:** Person 3 (dashboard). **Consumer of:** Person 1/2 `serve.py`.
-**Status:** the dashboard ships against this contract. A mock server
-(`server/mock-simulate.mjs`) implements it exactly, so the UI is fully
-demoable before the model is wired up.
-
-> **To switch from mock to the real model, change one line.**
-> Set `VITE_SIMULATE_URL` (see `.env.example`) or edit `TARGET` in
-> `src/lib/api.ts`. Nothing else in the UI touches the network.
-
----
+**Source of truth:** `serve.py` + `twin/` at the repo root, and the organisers' `API_CONTRACT.md`.
+This file describes how `src/lib/api.ts` uses that contract. If they ever disagree, `serve.py` wins
+and this file plus `api.ts` must be fixed. There is no mock server: every map is a live call to `serve.py`.
 
 ## Grid indexing (non-negotiable)
 
 | property | value |
 |---|---|
-| shape | `32` rows (lat) × `36` cols (lon) = **1152 cells** |
-| spacing | 1.0° |
-| row 0 | **37.5°N** (north) — rows run **north → south** |
-| row 31 | 6.5°N |
-| col 0 | **67.5°E** (west) — cols run **west → east** |
-| col 35 | 102.5°E |
+| shape | `32` rows (lat) × `36` cols (lon) = **1152 cells**, 1.0° spacing |
+| row 0 | **6.5°N (south)**, rows run **south → north**, row 31 = 37.5°N |
+| col 0 | **65.5°E (west)**, cols run **west → east**, col 35 = 100.5°E |
+| cell centre | `lat[r] = 6.5 + r`, `lon[c] = 65.5 + c` |
 | flat index | `i = row * 36 + col` |
 
-`lat[r] = 37.5 - r`, `lon[c] = 67.5 + c`.
-The canonical machine-readable version is **`shared/grid.json`** (also served at
-`GET /meta`). It carries the landmask, orography, regions and reference cities.
-Both the server and the browser import it, so they cannot disagree.
+When drawing, flip rows so north is up. `shared/grid.json` (`order: "lat_asc_lon_asc"`) holds the same
+grid plus UI-only extras: `mask` (`0` ocean · `1` land outside India · `2` India land), elevation,
+regions and cities. The land/sea fraction used for display comes from `GET /meta` when the backend is up.
 
-Landmask values: `0` ocean · `1` land outside India · `2` India land.
+## Channels (fixed order, physical units on the wire)
 
-## Variables
+| index | key | meaning | unit on the wire | UI display |
+|---|---|---|---|---|
+| 0 | `t2m` | 2 m temperature | K | °C (−273.15) |
+| 1 | `tp` | precipitation, daily rate (always ≥ 0) | mm/day | mm/day |
+| 2 | `u10` | 10 m wind, + = toward east | m/s | m/s |
+| 3 | `v10` | 10 m wind, + = toward north | m/s | m/s |
+| 4 | `msl` | mean sea-level pressure | **Pa** | hPa (÷100) |
+| 5 | `tcwv` | total column water vapour | kg/m² | kg/m² |
 
-| key | meaning | unit |
-|---|---|---|
-| `t2m` | 2 m temperature | K |
-| `tp` | total precipitation (daily rate) | mm/day |
-| `tcwv` | total column water vapour | kg/m² |
-| `u10` | 10 m zonal wind (+ = eastward) | m/s |
-| `v10` | 10 m meridional wind (+ = northward) | m/s |
-| `msl` | mean sea-level pressure | hPa |
+Unit conversions happen only for display (`display()` in `src/lib/grid.ts`) and when turning a
+user-entered hPa shock into Pa (`uiDeltaToBackend()`). Requests and stored rollouts are raw backend units.
 
-`tp` is a **daily rate**, not an accumulation. If `serve.py` emits metres of
-accumulated precip, convert in the adapter (`mm/day = m * 1000 / step_days`) —
-`src/lib/api.ts` has a hook for exactly this.
+## `GET` / `POST /health`
 
----
+`200 {"status": "ready", "model_name": "unet:p2_unet_d4st"}`. The header badge shows this `model_name`
+with a green dot while the backend answers, and a red `OFFLINE` badge when it does not.
+
+## `GET /meta`
+
+```json
+{ "model_name": "...", "channels": ["t2m","tp","u10","v10","msl","tcwv"],
+  "units": ["K","mm/day","m/s","m/s","Pa","kg/m2"],
+  "lat": [6.5, ..., 37.5], "lon": [65.5, ..., 100.5], "max_steps": 14,
+  "land_sea_mask": [[...36] x 32] }
+```
+`fetchMeta()` rejects the response if the channel order, grid or mask shape differ from the above.
 
 ## `POST /simulate`
 
-### Request
-
+Request:
 ```jsonc
 {
-  "horizon_days": 10,                  // 1..10
-  "variables": ["t2m","tp","tcwv","u10","v10","msl"],
-  "seed": 7,                           // reproducibility
-  "include_prime": true,               // also return the unperturbed control
-  "perturbations": [
-    // form A — explicit painted mask (what the Shock Painter sends)
-    { "field": "t2m", "delta": 2.0,
-      "mask": [[22,21,1.0],[22,22,0.83],[23,21,0.61]] },   // [row, col, weight 0..1]
-
-    // form B — analytic stamp (what the region presets send)
-    { "field": "u10", "delta": -3.0,
-      "center_latlon": [15.5, 70.5],   // OR "center": [row, col]
-      "radius_cells": 3.0,
-      "falloff": "gaussian" }          // gaussian | linear | hard
-  ]
+  "init_states": [[[[...36] x 32] x 6] x 3],   // 3 consecutive days, OLDEST first, physical units
+  "doy_sincos": [0.74, -0.67],                 // [sin, cos](2*pi*day_of_year/365) of the LAST input day
+  "steps": 10,                                 // 1..14
+  "perturbation": null                         // or [6][32][36]: a delta ADDED to init_states[2]
 }
 ```
-
-Rules
-* `perturbations: []` ⇒ the branched run **is** the prime run (all deltas 0).
-* `delta` is added to the **initial condition** of `field`, in that field's unit.
-* `mask` weights are clamped to `[0,1]`; max 4096 entries per perturbation.
-* Max 24 perturbations; `|delta| <= 50`.
-* Perturbations are applied at day 0 and then evolve freely.
-
-### Response `200`
-
-```jsonc
-{
-  "run_id": "sur_0007_k3f9",
-  "mode": "surrogate",                 // "surrogate" | "model"  <-- UI badges this
-  "engine": "monsoon-anomaly-surrogate/1.1",
-  "grid": { "nlat":32, "nlon":36, "order":"lat_desc_lon_asc",
-            "lat":[...32], "lon":[...36] },
-  "days": 10,
-  "variables": ["t2m","tp","tcwv","u10","v10","msl"],
-  "units": { "t2m":"K", "tp":"mm/day", ... },
-  "layout": "day-major: index = day*nlat*nlon + row*nlon + col",
-  "prime":    { "t2m":[...36864 floats], "tp":[...], ... },   // null if include_prime=false
-  "branched": { "t2m":[...36864 floats], "tp":[...], ... },
-  "applied_perturbations": 1,
-  "meta": { "latency_ms": 41.2, "seed": 7, "cells": 1152, "notice": "..." }
-}
+Response `200`:
+```json
+{"rollout": [[[[...36] x 32] x 6] x steps], "inference_ms": 42.1}
 ```
+`rollout[k]` is day `k+1` after the last input day. Bad input returns `400 {"detail": "bad request: ..."}`.
 
-* Each array is **flat, day-major**: `value(day, row, col) = arr[day*1152 + row*36 + col]`.
-* Length per variable = `days * 1152` (10 days ⇒ 36 864 numbers).
-* `mode` is **required**. The dashboard shows a permanent, unmissable
-  `SURROGATE` badge whenever `mode !== "model"`, so surrogate output can never
-  be mistaken for model output in front of judges.
+### How the dashboard uses it
 
-### Errors
+* **Prime** = one call with `perturbation: null`; cached per (backend URL, window, steps).
+* **Branched** = one call with the summed perturbation tensor of every armed shock.
+  Armed shocks always send a full `[6][32][36]` tensor, even an all-zero one.
+* Shocks are deltas, never new values. A percent shock becomes
+  `delta = init_states[2][ch][r][c] * percent / 100` in the browser.
+* Painted shocks carry per-cell weights 0..1 (brush falloff); region presets are gaussian stamps.
+* **Judge presets** (exact evaluation definitions; a box covers every cell whose centre is inside it):
+  * `Warm Bay of Bengal (Judge)`: `t2m` +3 K and `tcwv` +15 % over 8–20°N, 82–94°E
+  * `Monsoon Stall (Judge)`: `u10` and `v10` −40 % over 8–20°N, 65–75°E
+  * `Zero Shock (Sanity Check)`: all-zero tensor. The server guarantees zero shock == null shock, so
+    the branch must equal Prime exactly; the status toast reports `max |Δ| = 0`.
+* The backend is deterministic: the same request always returns the same rollout, so
+  Branched − Prime is pure shock effect.
 
-`400` malformed JSON · `422` unknown variable / field, `delta` out of range,
-too many perturbations · `500` engine failure. Body: `{ "error": "message" }`.
+## Inputs and real coupling
 
-## `GET /health` → `{ ok, mode, uptime_s, runs, engine }`
-## `GET /meta` → grid + landmask + orography + regions + cities + units
+* Start states come only from `data/demo_windows.json` (real 3-day windows from held-out years, inputs
+  only, never forecasts; regenerate with `python -m training.export_demo_windows`).
+* If that file is missing or invalid, or the backend is unreachable, the UI shows the banner
+  **"Backend offline or demo_windows.json missing"** and renders no fields. There is no synthetic or
+  pre-rendered fallback anywhere.
 
----
+## Backend URL
 
-## If `serve.py` can only return ONE rollout
-
-That's fine — the adapter handles it. Leave `include_prime` unsupported and the
-dashboard fires a second call with `perturbations: []`, caches it as the control
-timeline, and reuses it for every subsequent shock. See `ensurePrime()` in
-`src/lib/api.ts`. Only the branched call is re-issued when the judge repaints.
-
-## Surrogate physics (what the mock actually computes)
-
-Not a weather model. A deterministic anomaly-propagation surrogate:
-
-1. **Prime background** — July monsoon climatology per cell (northwest heat max,
-   Ghats/Bay/Cherrapunji rain maxima, Tibetan lapse rate, monsoon-trough low).
-2. **Advection** — semi-Lagrangian backtrace with **bicubic** interpolation,
-   8 substeps/day (CFL-safe), driven by a low-level steering flow.
-3. **Diffusion + decay** — Laplacian, with e-folding times that are longer over
-   ocean (SST anomalies persist) than land.
-4. **Couplings** — Clausius–Clapeyron (7 %/K), moisture convergence
-   (`Q·(−∇·V)·86400`, SI), orographic lift, latent-heating pressure fall,
-   geostrophic adjustment, cloud/evaporative cooling.
-5. **Mass-field adjustment** — a damped 2-D wave equation on the MSL anomaly
-   (c ≈ 12 m/s). This is what lets a Bay of Bengal shock influence the Western
-   Ghats even though the low-level jet flows the *other* way.
-6. **Sponge layer** — outer 3 cells relaxed toward zero (Davies-style), so
-   nothing piles up against the domain edge.
-
-The `dP → dMSL → wind → convergence → dP` loop gain is **≈0.4/day (< 1)**, so
-rollouts decay rather than run away. Verified: zero saturated cells across all
-presets and all 10 days.
+* `npm run dev` (:5173) / `npm run preview` (:4173): same-origin proxy to `SIMULATE_TARGET`
+  (shell environment variable, default `http://127.0.0.1:8000`).
+* Static build served from `dashboard/` (e.g. `python -m http.server 5500 -d dashboard`):
+  calls `http://127.0.0.1:8000` directly (CORS is open on the server).
+* `VITE_SIMULATE_URL` at build time, or the URL field in the header (saved in localStorage), overrides both.
