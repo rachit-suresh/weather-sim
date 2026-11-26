@@ -1,0 +1,14 @@
+cnn {} params=238,791 device=cpu rain=sqrt curriculum=[(1, 4), (2, 3), (4, 3), (8, 2)] options: edge_relax=False latlon=False rain_head=two_part shock_loss=0.0 wd=0.0001 csi_loss=0.5 csi_tau=2.0 bias_guard=0.0
+ep   1 unroll 1  train 1.0694  val 0.4161  74s
+ep   2 unroll 1  train 0.8497  val 0.3586  66s
+ep   3 unroll 1  train 0.8030  val 0.3298  66s
+ep   4 unroll 1  train 0.7763  val 0.3197  64s
+ep   5 unroll 2  train 0.9993  val 0.4658  131s
+ep   6 unroll 2  train 0.9710  val 0.4537  129s
+ep   7 unroll 2  train 0.9512  val 0.4403  129s
+ep   8 unroll 4  train 1.2069  val 0.6280  255s
+ep   9 unroll 4  train 1.1850  val 0.6226  247s
+ep  10 unroll 4  train 1.1666  val 0.6228  205s
+ep  11 unroll 8  train 1.4160  val 0.8061  378s
+ep  12 unroll 8  train 1.4039  val 0.8093  407s
+saved C:\Users\vangs\cursor\devforge_2\wt-e2\artifacts\models\v2_e2b.pt best val 0.8061

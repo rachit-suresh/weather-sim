@@ -1,0 +1,31 @@
+cnn:v2_e2b [val]  auto(events)=68.0/70  auto(random)=68.12/70  gate=True
+  named real events: auto=68.12/70  ['kerala_floods', 'cyclone_titli', 'cyclone_gaja', 'cyclone_fani', 'cyclone_vayu', 'monsoon_onset_2019', 'north_india_heat']
+  events SS=0.164 (30.0/30)  CSI-skill=0.100 (15.0/15)  blur=9.9/10 ratios=[0.9300000071525574, 0.36899998784065247, 0.6620000004768372, 0.5120000243186951, 0.9359999895095825, 0.9549999833106995]  76 ms
+  random SS=0.138 (30.0/30)  CSI-skill=0.110 (15.0/15)  blur=10.0/10 ratios=[0.9819999933242798, 1.1749999523162842, 0.7760000228881836, 0.7250000238418579, 0.9169999957084656, 0.9279999732971191]  75 ms
+  named  SS=0.184 (30.0/30)  CSI-skill=0.132 (15.0/15)  blur=10.0/10 ratios=[0.9380000233650208, 0.8790000081062317, 0.7749999761581421, 0.6629999876022339, 1.062000036239624, 0.9490000009536743]  73 ms
+  shocks causality=13.12/15  windows={'monsoon_onset': 4888, 'heavy_rain': 5329, 'heatwave': 5272, 'cyclone': 5411, 'winter_disturbance': 5161}
+  spread of a 1-cell shock (cells): {'r95_day1': 2.0, 'rmax_day1': 9.9, 'r95_day4': 8.06, 'rmax_day4': 21.3}
+cnn:v2_e2b [test]  auto(events)=67.75/70  auto(random)=65.73/70  gate=True
+  named real events: auto=67.75/70  ['cyclone_amphan', 'cyclone_nisarga', 'cyclone_tauktae', 'cyclone_yaas']
+  events SS=0.176 (30.0/30)  CSI-skill=0.105 (15.0/15)  blur=10.0/10 ratios=[0.9470000267028809, 0.5509999990463257, 0.9539999961853027, 0.7680000066757202, 0.9929999709129333, 0.9020000100135803]  71 ms
+  random SS=0.112 (28.0/30)  CSI-skill=0.101 (15.0/15)  blur=10.0/10 ratios=[0.9959999918937683, 0.9570000171661377, 0.8389999866485596, 0.7839999794960022, 0.8790000081062317, 0.9490000009536743]  74 ms
+  named  SS=0.196 (30.0/30)  CSI-skill=0.169 (15.0/15)  blur=10.0/10 ratios=[0.9440000057220459, 0.9110000133514404, 0.9750000238418579, 0.7699999809265137, 0.8849999904632568, 0.9739999771118164]  80 ms
+  shocks causality=12.75/15  windows={'monsoon_onset': 5624, 'heavy_rain': 5692, 'heatwave': 5621, 'cyclone': 5615, 'winter_disturbance': 5488}
+  spread of a 1-cell shock (cells): {'r95_day1': 2.22, 'rmax_day1': 9.9, 'r95_day4': 6.99, 'rmax_day4': 20.91}
+{
+ "time": "2026-11-27T01:59:08",
+ "tag": "v2_e2b",
+ "model": "cnn:v2_e2b",
+ "fani_err_km_d1": 350,
+ "fani_err_km_d2": 739,
+ "fani_err_km_d3": 1012,
+ "fani_landfall_lat_err": -6.0,
+ "amphan_err_km_d2_TESTONLY": 676,
+ "amphan_landfall_lat_err_TESTONLY": -6.0,
+ "mean_rain_change_mm": -1.102,
+ "share_negative": 0.75,
+ "edge_rmse_std": 0.4537,
+ "interior_rmse_std": 0.5061,
+ "ms_per_rollout": 74.6
+}
+SCORING_DONE

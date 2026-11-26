@@ -203,6 +203,8 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   weight, like the judge's CSI): hits = sum(s_p*s_t), misses = sum((1-s_p)*s_t), false alarms = sum(s_p*(1-s_t));
   term = W*(1 - hits/(hits+misses+fa+1)) + WB*|log((sum s_p + 1)/(sum s_t + 1))|. Applied on every batch.
   Settings: T = 2 mm, W = 0.5, WB = 0.1 (at most 2 weight settings tried). Checkpoint selection stays plain MSE.
+  E2b (second and last setting): soft CSI alone, W = 0.5, T = 2 mm, WB = 0 (no bias guard), because E2 showed the
+  guard pushes the heavy-rain frequency bias toward 1, which works against the CSI target (CSI peaks at bias > 1).
 - `V2-E3` Wind-to-rain: moisture-flux convergence -div(tcwv * V) from u10, v10, tcwv (1-cell centred differences) of
   the current state as extra input map(s) for every step, plus a small soft column-budget penalty. Target: rain
   response to the monsoon_stall shock and csi_skill; check reach (stencil widens it by 1 cell).
@@ -224,6 +226,8 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   are aggregated were not defined; now concrete (batch-wide sums, eps = 1, T = 2 mm, W = 0.5, WB = 0.1).
   Result (`docs/v2/RESULTS_E2.md`): E2 does not win (csi_skill and auto means lower, test shocks lower). Spec error
   found: the bias guard targets bias = 1, but CSI peaks at bias > 1 for an uncertain forecast.
+- v2/e2-softcsi (2026-11-27): `V2-E2` E2b line added (soft CSI alone, WB = 0) for the reason above. Result: E2b does
+  not win either (test auto mean -0.88, test shocks 12.75, csi_skill test lower); E2 closed.
 
 - v2 branch (2026-11-26): section 14 defines v2 experiments E2-E8, the protocol, win rule and resource rule.
 
