@@ -246,7 +246,10 @@ export default function ShockRail({ m }: { m: Multiverse }) {
         <div className="flex flex-wrap gap-1">
           <ToggleChip active={m.showWind} onClick={() => m.setShowWind(!m.showWind)} icon={Wind}>WIND</ToggleChip>
           <ToggleChip active={m.showCities} onClick={() => m.setShowCities(!m.showCities)} icon={MapPin}>CITIES</ToggleChip>
-          <ToggleChip active={m.showScenery} onClick={() => m.setShowScenery(!m.showScenery)} icon={Sparkles} accent="var(--color-safe)">WORLD</ToggleChip>
+          {/* spec IMP-3d: on = Storybook (pixel-art map + forecast tint), off = Data (full colour field) */}
+          <span title={m.showScenery ? "Storybook: pixel-art map with the forecast as a tint. Click for Data mode (full colour field)." : "Data mode: full colour field. Click for the Storybook pixel-art map."}>
+            <ToggleChip active={m.showScenery} onClick={() => m.setShowScenery(!m.showScenery)} icon={Sparkles} accent="var(--color-safe)">STORYBOOK</ToggleChip>
+          </span>
         </div>
         <label className="mt-2 block">
           <span className="font-pixel text-[8px] text-ink-faint">FOCUS REGION</span>

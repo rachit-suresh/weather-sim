@@ -14,8 +14,9 @@ import {
 import { frame, diffFrame, type Timeline } from "@/lib/api";
 import {
   PAPER, TERRAIN, cellHash, stamp, computeTargetField,
-  colorForFieldValue, brushCellsAround, drawPixelSun, drawCompassRose, drawPixelSonarRipple,
+  colorForFieldValue, brushCellsAround, drawPixelSun, drawCompassRose, drawPixelSonarRipple, storyAlpha,
 } from "@/lib/mapSprites";
+import { getIndiaArt, artIndex } from "@/lib/indiaArt";
 import {
   WORLD_RGB, sampleWorldBiome,
   GLOBE_FOCUS_SCALE, GLOBE_FOCUS_INV_SCALE,
@@ -489,7 +490,10 @@ export default function GlobeView(props: Props) {
       landFlags.fill(-1);
 
       const pulseSin = 0.55 + 0.45 * Math.sin(tick * 0.08);
-      const showGridJoints = indiaPxPerDeg >= 9.0;
+      // Storybook mode (spec IMP-3c): India grid pixels come from the pixel-art India map
+      const story = p.showScenery;
+      const art = story ? getIndiaArt() : null;
+      const showGridJoints = indiaPxPerDeg >= 9.0 && !story;
 
       // ── Pass 1: Conformal Möbius + Orthographic pixel-art sphere shader ───
       for (let py = minPy; py <= maxPy; py++) {
@@ -539,9 +543,19 @@ export default function GlobeView(props: Props) {
             let rCol = t.base[0];
             let gCol = t.base[1];
             let bCol = t.base[2];
-
-            // Blend non-India foreign cells smoothly into neighboring world biomes (avoids rectangular seam)
-            if (mask === 1) {
+            let artKind = -1;
+            if (art) {
+              const ai = artIndex(latDeg, lonDeg);
+              artKind = art.kind[ai];
+              rCol = art.rgba[ai * 4]; gCol = art.rgba[ai * 4 + 1]; bCol = art.rgba[ai * 4 + 2];
+              // melt the rectangular art map into the world globe near the grid edge (India itself never fades)
+              if (artKind !== 2) {
+                const edgeDeg = Math.min(latDeg - 6.0, 38.0 - latDeg, lonDeg - 65.0, 101.0 - lonDeg);
+                const f = Math.max(0, Math.min(1, edgeDeg / 3.5));
+                const [wr, wg, wbCol] = WORLD_RGB[sampleWorldBiome(latDeg, lonDeg)];
+                rCol = wr + (rCol - wr) * f; gCol = wg + (gCol - wg) * f; bCol = wbCol + (bCol - wbCol) * f;
+              }
+            } else if (mask === 1) {
               const wb = sampleWorldBiome(latDeg, lonDeg);
               const [wr, wg, wbCol] = WORLD_RGB[wb];
               rCol = rCol * 0.45 + wr * 0.55;
@@ -560,6 +574,8 @@ export default function GlobeView(props: Props) {
               const edgeFade = mask === 2 ? 1 : Math.max(0, Math.min(1, edgeDeg / 5.5));
               let a = !p.showScenery
                 ? 1
+                : story
+                  ? storyAlpha(rawVal, scaleV, p.view, p.variable, p.lens, artKind < 0 ? mask : artKind)
                 : mask === 2
                   ? (strong ? 0.92 : 0.62)
                   : mask === 0
@@ -600,9 +616,10 @@ export default function GlobeView(props: Props) {
             }
 
             if (focusSet && !focusSet.has(ci)) {
-              rCol = rCol * 0.26 + PAPER[0] * 0.74;
-              gCol = gCol * 0.26 + PAPER[1] * 0.74;
-              bCol = bCol * 0.26 + PAPER[2] * 0.74;
+              const wash = story ? 0.35 : 0.74;     // lighter over the art map (spec IMP-3)
+              rCol = rCol * (1 - wash) + PAPER[0] * wash;
+              gCol = gCol * (1 - wash) + PAPER[1] * wash;
+              bCol = bCol * (1 - wash) + PAPER[2] * wash;
             }
 
             if (frontCol > -90) {
@@ -645,7 +662,7 @@ export default function GlobeView(props: Props) {
               Math.max(0, Math.min(255, bCol | 0)),
               255,
             );
-            landFlags[bi] = mask === 2 ? 2 : (mask === 1 || lsm >= 0.45) ? 1 : 0;
+            landFlags[bi] = artKind >= 0 ? artKind : mask === 2 ? 2 : (mask === 1 || lsm >= 0.45) ? 1 : 0;
           } else {
             // Outside India grid -> global pixel earth
             const wb = sampleWorldBiome(latDeg, lonDeg);
@@ -798,7 +815,7 @@ export default function GlobeView(props: Props) {
       ctx.clip();
 
       // Biome sprites across visible India cells + curving Himalayan arc
-      if (p.showScenery && indiaPxPerDeg >= 7.5) {
+      if (p.showScenery && !story && indiaPxPerDeg >= 7.5) {
         const spriteUnit = Math.max(1, indiaPxPerDeg / 9.2);
         for (let r = 0; r < NR; r++) {
           for (let c = 0; c < NC; c++) {
@@ -833,10 +850,10 @@ export default function GlobeView(props: Props) {
         const shipScale = Math.max(1, indiaPxPerDeg / 6.8);
 
         const arabShip = projectGeo(16.8, 68.0, axes, R, cx, cy, 0.2);
-        if (arabShip.visible) stamp(ctx, "ship", arabShip.x, arabShip.y + bob, shipScale);
+        if (arabShip.visible && !story) stamp(ctx, "ship", arabShip.x, arabShip.y + bob, shipScale);
 
         const bobShip = projectGeo(15.6, 87.2, axes, R, cx, cy, 0.2);
-        if (bobShip.visible) stamp(ctx, "ship", bobShip.x, bobShip.y - bob, shipScale * 0.88);
+        if (bobShip.visible && !story) stamp(ctx, "ship", bobShip.x, bobShip.y - bob, shipScale * 0.88);
 
         const fontPx = Math.max(7, Math.min(11, Math.round(indiaPxPerDeg * 0.42)));
         ctx.fillStyle = "#3f6e78";

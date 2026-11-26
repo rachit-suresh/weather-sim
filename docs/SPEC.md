@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.11 (2026-11-26). **Status:** active.
+**Version:** 1.12 (2026-11-26). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -135,6 +135,16 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   below -2 mm/day) plus wind power density and a solar cloud proxy. Each lens shows formula, thresholds and caveats.
 - `IMP-2` Dashboard (`dashboard/` built from `frontend/`): globe and flat pixel-grid views, shock brush and region
   presets, branch timeline (Prime vs Shocked), station inspector, impact rail; offline (no CDN, fonts embedded).
+- `IMP-3` Art style v2 (branch `feature/pixel-art-india`; merged into main ONLY with explicit team approval):
+  (a) an India art map generated in the browser at 10 art pixels per degree: coastline traced from the model's own
+  land/sea mask (art matches forecast cells), white surf line, brown extruded edge on the south/east coasts, stacked
+  grey peak sprites from elevation plus hand-drawn ranges (Himalaya, Western/Eastern Ghats, Aravalli, Vindhya-Satpura),
+  tree clusters (north-east, Western Ghats, central India), Thar dunes, 8 major rivers, teal sea with wave marks,
+  boats and sea labels, neighbouring countries in muted parchment;
+  (b) flat map draws the art map directly; (c) globe magnifies India 5x (focus warp k = 5, was 2.65) and samples the
+  art map inside the grid; (d) "Storybook" overlay (default): translucent pixel tint of the forecast field plus weather
+  sprites (clouds/rain where wet, sun where hot, wind arrows); "Data" toggle restores the full colour field;
+  (e) no new network dependencies, no change to the server API, rollout must stay live (`IMP-2`).
 ## 12. Plan (updated in 1.1)
 
 - **Run 2 (now):** families CNN, U-Net, CNN+transformer hybrid, physics hybrid, ConvGRU with `REP-*`, `ROL-1..2`,
@@ -189,6 +199,7 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.4 (2026-11-26): D4 + edge relax screening added; r3_unet reuses p2_unet_d4st (identical run).
 - 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
 - 1.6 (2026-11-26): D4 + edge relax wins the screening; run 3b adds it to the other 4 families.
+- 1.12 (2026-11-26): `IMP-3` art style v2 (pixel-art India map, 5x globe focus, storybook overlay), team-approved plan.
 - 1.11 (2026-11-26): phase 2d result recorded: no blend replaces r3_cnn.
 - 1.10 (2026-11-26): phase 2d CNN + physics blend experiment and its acceptance rule.
 - 1.9 (2026-11-26): spec error: `IMP-1` described a rain-deficit crop panel, but the team's merged dashboard implements

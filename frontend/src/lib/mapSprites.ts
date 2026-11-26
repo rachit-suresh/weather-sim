@@ -135,6 +135,26 @@ export function colorForFieldValue(
   return SEQUENTIAL[variable](Math.max(0, Math.min(1, (v - lo) / (hi - lo))));
 }
 
+/**
+ * Storybook overlay strength (spec IMP-3d): how strongly a forecast value tints the art map.
+ * Strong where the value is notable (wet, changed, alert), faint where it is ordinary, so the terrain stays readable.
+ * mask: 0 sea, 1 neighbour land, 2 India.
+ */
+export function storyAlpha(
+  v: number, scaleV: number, view: ViewMode, variable: VarKey, lens: LensId | null, mask: number,
+): number {
+  const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
+  let a: number;
+  // diff colours are near-white for small changes: give them no tint (no washed-out art), then ramp steeply
+  if (view === "diff") { const m = Math.abs(v) / (scaleV || 1); return m < 0.08 ? 0 : clamp((m - 0.08) * 3.4, 0.25, 0.9); }
+  else if (lens === "flood") a = clamp((v - 20) / 50, 0, 0.72);
+  else if (lens === "heat") a = clamp((v - 23) / 9, 0, 0.72);
+  else if (lens === "energy") a = clamp(Math.abs(v) / 8, 0, 0.6);
+  else if (variable === "tp") a = v < 1 ? 0 : clamp(v / 30, 0.12, 0.75);
+  else a = 0.34;
+  return a * (mask === 0 ? 0.7 : mask === 1 ? 0.8 : 1);
+}
+
 /** Gaussian shock brush kernel around a grid cell. */
 export function brushCellsAround(center: number, brushRadius: number): { i: number; w: number }[] {
   const hr = rowOf(center), hc = colOf(center);
