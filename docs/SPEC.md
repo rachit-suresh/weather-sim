@@ -208,10 +208,33 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - `V2-E7` One advect-and-correct model: learned velocity (capped <= 3 cells/day), semi-Lagrangian advection of learned
   feature channels in 2 substeps, local CNN correction inside each substep; warm-start from `r3_cnn` where shapes
   allow. Target: Fani track error and shock propagation without losing the mean.
+- `V2-E7b` E7 follow-up (fine-tune of `v2_e7`), two changes, each tied to a measured E7 failure:
+  (a) **Reach budget.** Day-1 reach is bounded by construction to <= 10 cells in the reach probe's (Euclidean) metric.
+  A 3x3 conv adds a square of half-side 1 (sqrt 2 cells Euclidean); a bilinear lookup adds the displacement cap plus
+  a square of half-side 1 (bicubic: half-side 2); 1x1 convs, the rain gate and the velocity-head stencil (its sqrt 2
+  is always shorter than the lookup it steers) add nothing on the longest path. Reach = sqrt 2 x (sum of half-sides)
+  + daily displacement cap. E7: sqrt 2 x (1 inp + 2 bicubic + 2 block 0 + 2 bicubic + 4 blocks 1-2) + 3.0 = 18.6
+  (Chebyshev 13; measured rmax 11.09). E7b: input 3x3 conv (1), bilinear lookups (1 + 1), block 0 3x3 (2), blocks 1-2
+  as 1x1 "reaction" convs (0), cap 2.5 cells/day: sqrt 2 x 5 + 2.5 = 9.57 <= 10. Blocks 1-2 are warm-started by
+  summing each 3x3 kernel over its taps (keeps the response to smooth fields).
+  (b) **Stability fix.** Diagnosis on `v2_e7` (val event windows): the warm_ocean failure is always rain (tp up to
+  5.5-7.0 judge std on days 1-6; r3_cnn 4.1-4.6). Replaying the unshocked velocity barely changes it (max 5.06-7.02),
+  zero velocity makes it as bad or worse (6.19-8.40), so the correction/output path amplifies the rain response, not
+  the transport. Fix: train with the `SHP-8` shock guard (`--shock-loss 20`, penalty above 4 judge std, every 4th batch).
+  Fine-tune: curriculum `4:2,8:2`, lr 3e-4, 3 threads. Target: shocks >= 13.12 and reach rmax day 1 <= 11 while keeping
+  E7's uncapped skill and Fani track gains. Judged by `V2-WIN` against `r3_cnn`.
+  **Result: does not win** (`docs/v2/RESULTS_E7.md`): reach fixed (rmax day 1 6.8 / 7.0), Fani track best so far
+  (308/104/528 km, landfall latitude 0.0), shocks up to 12.75 but still < 13.12, and heavy-rain CSI fell (val mean
+  66.31, test mean 65.25).
 - `V2-E8` Fixed-seed CRPS residual head: per-pixel noise from a fixed seed independent of the input, 2-4 members in
   training with almost-fair CRPS, serve one fixed member. Target: sharpness and csi_skill; determinism must hold.
 
 ## Change log
+
+- v2 E7b (2026-11-27): spec error in `V2-E7`: "velocity capped <= 3 cells/day" was taken as the locality guarantee,
+  but velocity-head stencils, bicubic support and correction blocks add to the day-1 reach (E7: theoretical 18.6
+  Euclidean / 13 Chebyshev cells, measured rmax 11.09 > 11). `V2-E7b` adds a reach budget computed by construction and
+  the shock-guard fix for the warm_ocean rain overshoot found in E7.
 
 - v2 branch (2026-11-26): section 14 defines v2 experiments E2-E8, the protocol, win rule and resource rule.
 

@@ -138,3 +138,106 @@ per substep (reach budget), and a K=3 substep variant. None of these was run her
 5. **Spec, `V2-P` speed baseline (86 ms):** timings depend on machine load (r3_cnn measured 71 ms side by side
    today, v2_checks reported 86). Speed comparisons should be side by side. Not a decision issue here (both are far
    under 1 s).
+
+---
+
+# E7b: reach budget + shock guard (fine-tune of v2_e7)
+
+Spec: `V2-E7b` (added before the code; the change log classifies the `V2-E7` reach gap as a spec error).
+Model: `artifacts/models/v2_e7b.pt` (153,243 parameters). Log: `runs/logs/v2_e7b.log`.
+
+## Diagnosis on v2_e7 (warm_ocean, val event windows, max |shocked - base| in judge std)
+
+| window | r3_cnn | v2_e7 as is | v2_e7, velocity replayed from the unshocked run | v2_e7, zero velocity |
+|---|---|---|---|---|
+| monsoon_onset | 4.14 | 5.47 | 5.06 | 8.40 |
+| heavy_rain | 4.52 | 6.90 | 6.56 | 6.19 |
+| heatwave | 4.60 | 7.03 | 7.02 | 7.66 |
+| cyclone | 2.04 | 1.88 | 1.71 | 1.69 |
+| winter_disturbance | 0.61 | 0.75 | 0.76 | 0.75 |
+
+The overshoot is always rain (tp), on days 1-6. In the "velocity replayed" run the velocity head cannot react to the
+shock, and the overshoot barely changes. With zero velocity (correction path only) it is as bad or worse. So the
+velocity head does **not** pile the anomaly up. The fine-tuned **correction/output path amplifies the rain response**
+to the warm, moist box. r3_cnn already sits at 4.1-4.6 std, close to the 5 std limit.
+
+**Theoretical day-1 reach of E7** (Euclidean, the probe's metric) = sqrt 2 x (sum of stencil half-sides on the
+longest path) + displacement cap:
+- input 3x3 conv: 1
+- bicubic lookup in each substep: 2 + 2
+- block 0: 2
+- blocks 1-2: 4
+- displacement cap: 3.0 cells/day
+
+That is sqrt 2 x 11 + 3 = **18.6 cells** (13 Chebyshev). The velocity-head 3x3 stencil (half-side 1) is never longer
+than the lookup it steers. Measured rmax was 11.09.
+
+## Changes (spec V2-E7b)
+
+- **(a) Reach budget.** Bilinear lookups (half-side 1), cap 2.5 cells/day, blocks 1-2 become 1x1 "reaction" blocks
+  (`--net '{"max_disp": 2.5, "interp": "bilinear", "block_k": [3, 1, 1]}'`). Reach = sqrt 2 x (1 + 1 + 2 + 1) + 2.5
+  = **9.57 <= 10** by construction. `AdvectCorrectNet.reach_bound()` computes it. The new
+  `tests/test_advcnn.py::test_reach_budget` perturbs one input cell under random weights and capped random
+  velocities: nothing moves beyond the bound (empirical max 7.6).
+- **(b) Stability fix.** `SHP-8` shock guard, `--shock-loss 20` (penalty above 4 judge std, every 4th batch).
+- **Warm start** from `models/v2_e7.pt`: all 31 tensors reused. 27 copied by name and shape. The 4 block-1/2 conv
+  weights (3x3 -> 1x1) were summed over their taps. The cap and interpolation changes need no new tensors.
+- Fine-tune: `--curriculum 4:2,8:2 --lr 3e-4 --threads 3`. Epochs took 266-451 s, 23 min in total. The best last-stage
+  validation loss was epoch 4 (0.8153; v2_e7 had 0.7864).
+
+## Results (same table as E7)
+
+| | r3_cnn | v2_e7 | v2_e7b |
+|---|---|---|---|
+| val auto events / random / named | 67.51 / 68.12 / 68.12 | 66.60 / 67.00 / 67.00 | 65.07 / 66.11 / 67.75 |
+| **val mean** | **67.92** | 66.87 | **66.31 (-1.61)** |
+| test auto events / random / named | 68.12 / 67.65 / 68.12 | 67.38 / 67.38 / 67.38 | 63.18 / 64.82 / 67.75 |
+| **test mean** | **67.96** | 67.38 | **65.25 (-2.71)** |
+| shocks val / test | 13.12 / 13.12 | 12.00 / 12.38 | 12.75 / 12.75 |
+| uncapped ss val events / random / named | 0.168 / 0.138 / 0.185 | 0.173 / 0.139 / 0.188 | 0.145 / 0.129 / 0.168 |
+| uncapped ss test events / random / named | 0.167 / 0.118 / 0.194 | 0.171 / 0.125 / 0.204 | 0.147 / 0.110 / 0.186 |
+| csi_skill val events / random / named | 0.098 / 0.105 / 0.140 | 0.110 / 0.106 / 0.155 | 0.083 / 0.089 / 0.123 |
+| csi_skill test events / random / named | 0.108 / 0.105 / 0.162 | 0.106 / 0.109 / 0.159 | 0.070 / 0.097 / 0.142 |
+| judge CSI points val ev/rnd, test ev/rnd | 15 / 15, 15 / 15 | 15 / 15, 15 / 15 | 12.5 / 13.4, 10.4 / 14.5 |
+| reach rmax day 1 val / test | 9.90 / 9.67 | 11.09 / 10.75 | **6.77 / 7.00** |
+| reach r95 day 1 val / test | 2.08 / 1.88 | 4.77 / 5.02 | 3.46 / 2.85 |
+| warm_ocean stable / propagates (val; test) | 5 / 5; 4 / 5 | 2 / 5; 3 / 3 | 4 / 4; 4 / 5 |
+| monsoon_stall propagates (val; test) | 0; 1 | 1; 2 | 1; 0 |
+| **Fani error day 1 / 2 / 3 (km)** | 350 / 245 / 809 | 154 / 430 / 714 | **308 / 104 / 528** |
+| **Fani landfall-latitude error** | +2.0 | +1.0 | **0.0** |
+| Amphan day-2 error / landfall lat (report only) | 786 km / -7.0 | 312 km / 0.0 | 152 km / +1.0 |
+| wind-shock west-coast rain (share < 0) | -1.29 mm (92%) | -1.52 mm (83%) | -1.94 mm (92%) |
+| edge / interior day-4 RMSE (std) | 0.441 / 0.503 | 0.445 / 0.506 | 0.451 / 0.514 |
+| ms per 10-day rollout, 2 threads, side by side | 37 | 75 | 53 |
+
+Guards for v2_e7b: null test exact (0.0), `tests/test_engine.py` contract passes, 53 ms (< 1 s), repo scan 15/15,
+reach rmax 6.8 / 7.0 (<= 11). Warm_ocean maxima on val events after the fix: 2.65 / **6.94** / 3.60 / 2.45 / 0.58 std.
+The guard fixed 2 of the 3 overshooting windows, but heavy_rain (day 1) still fails.
+
+## Verdict under V2-WIN: does NOT win
+
+- Target: the best Fani track of any model so far. The mean of days 1-3 is 313 km (r3_cnn 468, v2_e7 433), and the
+  landfall latitude is exact. Shock propagation is mixed.
+- val mean -1.61 and test mean -2.71: **fail**.
+- Shocks 12.75 < 13.12: **fail** (better than v2_e7's 12.00 / 12.38).
+- All guards hold, including reach, which is now 6.8 / 7.0.
+
+**What it costs:** E7b loses heavy-rain CSI (judge CSI points drop below 15 on 3 of 4 sets) and some uncapped skill.
+Two things changed at once, so the cause is confounded:
+- the 1x1 reaction blocks remove 4 of the 7 spatial convs;
+- the SHP-8 shock guard also cost the U-Net events CSI in phase 2a (0.0615).
+
+**Next step if E7 continues:** separate the two changes.
+1. Reach budget only, with the 3x3 capacity kept elsewhere: e.g. 3x3 in block 2 instead of block 0, or bilinear +
+   cap 2.0 + one more 3x3. Every variant must still satisfy sqrt 2 x sum + cap <= 10.
+2. A rain-only guard: cap the per-step change of the rain amount, or apply the guard only to tp. This targets the
+   exact failure found, and avoids a guard that taxes every channel.
+
+## Errors found in E7b
+
+1. **Spec error (fixed), `V2-E7`:** the velocity cap was taken as the locality guarantee. The theoretical reach was
+   18.6 cells. `V2-E7b` and the change-log line record the reach-budget arithmetic.
+2. **Code (cosmetic), `train_nn --warm-start` log:** the "reused ... params" count sums the source tensor sizes, so it
+   prints 284,315 when the 3x3 -> 1x1 collapsed tensors are smaller in the new net (new net: 153,243 params).
+3. **Protocol note (spec):** `V2-E7b` changes two things (reach + guard) by design. It cannot say which change cost
+   the CSI. A follow-up should change one thing.
