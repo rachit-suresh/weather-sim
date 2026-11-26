@@ -234,7 +234,8 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   each next step (anomaly space, sigma a fixed fraction of anomaly std, training only), so the model learns to correct
   its own errors instead of amplifying them. Target: uncapped ss at days 4 and 8 (per-lead skill), day-8 blur ratios.
 - `V2-F5` Error growth, longer horizon: last curriculum stage unrolls 10 days instead of 8 (`4:2,10:2`), so the loss
-  sees the full forecast length that is scored. Target: same as `V2-F4`.
+  sees all 10 steps the judge requests (`SCORE_STEPS = 10`: error is scored at days 1/4/8, but the validity gate and
+  the shock checks run on all 10 days). Target: same as `V2-F4`, plus shock stability on days 9-10.
 - Inference-time damping toward climatology is NOT re-tried: `ROL-3` (run 2) lowered error but gave +0.5 to -1.4
   points because error points are capped, and it reduces day-8 variance (blur risk).
 
