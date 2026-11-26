@@ -1,0 +1,213 @@
+@import "tailwindcss";
+@import "./assets/fonts.css";
+
+/* The app is light parchment by design; kokonut components use their light variants. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MULTIVERSE MAP — storybook parchment pixel-art theme
+   Cream paper, maroon ink coastlines, Mario-style coin gold / brick red /
+   leaf green / sky-teal. Terrain-first map, data painted on top.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  --font-pixel: "Silkscreen", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-void: #f3e9cf;
+  --color-abyss: #ecdfbd;
+  --color-hull: #e7d8b0;
+  --color-panel: #f8f0da;
+  --color-grid-line: #c8b184;
+
+  --color-prime: #1d6fa3;
+  --color-prime-dim: #a8cfe4;
+  --color-branch: #b26a05;
+  --color-branch-dim: #e3b23c;
+  --color-shock: #c53d2e;
+  --color-danger: #b91c1c;
+  --color-safe: #3f7d2c;
+  --color-inkline: #7a2f1f;
+
+  --color-ink: #33200f;
+  --color-ink-dim: #6b5138;
+  --color-ink-faint: #79603d;
+
+  /* Warm parchment remap of the neutral scales used by kokonut/bklit:
+     light steps = paper, dark steps = wood/ink (flap boards, status island). */
+  --color-white: #fbf5e4;
+  --color-black: #201509;
+  --color-zinc-50: #f8f1dc;
+  --color-zinc-100: #f0e6c8;
+  --color-zinc-200: #e0d0a8;
+  --color-zinc-300: #c8b184;
+  --color-zinc-400: #a68c5e;
+  --color-zinc-500: #8a7048;
+  --color-zinc-600: #6e5636;
+  --color-zinc-700: #57422a;
+  --color-zinc-800: #40301e;
+  --color-zinc-900: #2e2114;
+  --color-zinc-950: #201509;
+}
+
+:root {
+  --radius: 0.5rem;
+  --radius-xl: 0.75rem;
+
+  --background: #f3e9cf;
+  --foreground: #33200f;
+  --card: #f8f0da;
+  --popover: #fbf5e4;
+  --primary: #1d6fa3;
+  --secondary: #e0d0a8;
+  --muted: #ecdfbd;
+  --muted-foreground: #6b5138;
+  --accent: #b26a05;
+  --destructive: #b91c1c;
+  --border: #c8b184;
+  --input: #c8b184;
+  --ring: #1d6fa3;
+
+  /* bklit chart tokens — ink on paper */
+  --chart-1: #1d6fa3;
+  --chart-2: #c07a08;
+  --chart-3: #c53d2e;
+  --chart-4: #3f7d2c;
+  --chart-5: #7c5cad;
+  --chart-background: #f8f0da;
+  --chart-foreground: #33200f;
+  --chart-foreground-muted: #6b5138;
+  --chart-label: #6b5138;
+  --chart-grid: #dcc99d;
+  --chart-line-primary: #1d6fa3;
+  --chart-line-secondary: #c07a08;
+  --chart-crosshair: #8a7048;
+  --chart-indicator-color: #1d6fa3;
+  --chart-indicator-secondary-color: #c07a08;
+  --chart-tooltip-background: #fbf5e4;
+  --chart-tooltip-foreground: #33200f;
+  --chart-tooltip-muted: #6b5138;
+  --chart-segment-line: #1d6fa3;
+  --chart-segment-background: #f8f0da;
+  --chart-marker-background: #fbf5e4;
+  --chart-marker-foreground: #33200f;
+  --chart-marker-border: #c8b184;
+  --chart-marker-badge-background: #1d6fa3;
+  --chart-marker-badge-foreground: #fbf5e4;
+  --chart-brush-border: #c8b184;
+  --chart-scale-01: #a8cfe4;
+  --chart-scale-02: #6ba3c4;
+  --chart-scale-03: #1d6fa3;
+  --chart-scale-04: #155480;
+  --chart-scale-05: #0e3a5c;
+  --chart-scale-pattern-color: #1d6fa3;
+
+  --legend: #f8f0da;
+  --legend-foreground: #33200f;
+  --legend-muted: #ecdfbd;
+  --legend-muted-foreground: #6b5138;
+  --legend-track: #e0d0a8;
+
+  --wg-accent: #1d6fa3;
+  --glitch-accent: #c53d2e;
+  --shimmering-color: #c07a08;
+  --color-blue-400: #6ba3c4;
+  --color-blue-600: #1d6fa3;
+}
+
+@layer base {
+  * { border-color: var(--border); }
+  html { color-scheme: light; }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-mono);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  ::selection { background: #c07a0855; }
+
+  /* Chunky pixel scrollbar in parchment tones */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: #ecdfbd; }
+  ::-webkit-scrollbar-thumb { background: #c8b184; border: 2px solid #ecdfbd; }
+  ::-webkit-scrollbar-thumb:hover { background: #a68c5e; }
+}
+
+@layer utilities {
+  .font-pixel { font-family: var(--font-pixel); }
+
+  /* Pixel-crisp rendering for the map canvas */
+  .pixelated {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+
+  .pixel-corners {
+    clip-path: polygon(
+      0 4px, 4px 4px, 4px 0,
+      calc(100% - 4px) 0, calc(100% - 4px) 4px, 100% 4px,
+      100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px),
+      calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 4px), 0 calc(100% - 4px)
+    );
+  }
+
+  /* Faint laid-paper grain instead of CRT scanlines */
+  .scanlines::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(122, 47, 31, 0.025) 0px,
+      rgba(122, 47, 31, 0.025) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+    mix-blend-mode: multiply;
+  }
+
+  .glow-prime { box-shadow: 0 0 0 1px #1d6fa340, 3px 3px 0 #1d6fa326; }
+  .glow-branch { box-shadow: 0 0 0 1px #b26a0540, 3px 3px 0 #b26a0526; }
+  .glow-shock { box-shadow: 0 0 0 1px #c53d2e40, 3px 3px 0 #c53d2e2e; }
+
+  .text-glow-prime { text-shadow: 1px 1px 0 #1d6fa333; }
+  .text-glow-branch { text-shadow: 1px 1px 0 #b26a0533; }
+
+  .panel {
+    background: linear-gradient(180deg, #f8f0daf2, #efe3c2f2);
+    border: 1px solid #b89b6a;
+    box-shadow: 3px 3px 0 rgba(51, 32, 15, 0.14);
+    backdrop-filter: blur(6px);
+  }
+
+  .hairline { border: 1px solid #d8c69a; }
+
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+}
+
+/* Ambient drift for the dot backdrop */
+@keyframes mm-drift {
+  0%   { transform: translate3d(0, 0, 0); }
+  50%  { transform: translate3d(-12px, -8px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+@keyframes mm-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+@keyframes mm-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(220%); }
+}
+.mm-pulse { animation: mm-pulse 1.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

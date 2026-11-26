@@ -27,3 +27,9 @@ venv/
 .DS_Store
 Thumbs.db
 .claude/settings.local.json
+
+# frontend / node
+node_modules/
+npm-debug.log*
+.probe/
+*.tsbuildinfo
