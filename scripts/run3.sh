@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run 3 (docs/SPEC.md 1.4, phase 2b): run 2 recipe + RAIN-3 two-part rain head on all 5 families.
-# U-Net is not trained here: p2_unet_d4st is the identical run (spec 1.4).
+# U-Net doubles as a reproducibility check of p2_unet_d4st (spec 1.5).
 # Resumable: rerun after a shutdown.   bash scripts/run3.sh [python] [parallel jobs] [threads per job]
 set -u
 PY=${1:-python}; JOBS=${2:-5}; THREADS=${3:-3}

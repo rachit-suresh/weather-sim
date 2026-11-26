@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.4 (2026-11-26). **Status:** active.
+**Version:** 1.5 (2026-11-26). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -140,8 +140,8 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   67.21 / 13.88 -> **WINS**; edge relax 66.98 / 13.12 (+0.47, just under the bar); lat/lon 66.87 / 13.12;
   shock guard 66.07 / 13.12. None of the edge options fixed the Arabian Sea "spreads outward" check.
 - **Phase 2b, run 3:** all 5 families (U-Net, hybrid, ConvGRU, CNN, physics) with the run 2 recipe + `RAIN-3`
-  (`--rain-head two_part`). Tags `r3_<family>`. U-Net is not retrained: `p2_unet_d4st` already IS that model
-  (same recipe, options and seed), so it stands as U-Net's run 3 result.
+  (`--rain-head two_part`). Tags `r3_<family>`. U-Net is trained too (team decision), although `p2_unet_d4st` used
+  the same recipe, options and seed: `r3_unet` doubles as a reproducibility check (scores should match closely).
 - **Phase 2b+, D4 + edge relax (approved by the team):** U-Net with `--rain-head two_part --edge-relax`
   (`p2_unet_d4edge`) versus `p2_unet_d4st`, same win rule (mean of the 3 window sets +0.5, shocks not lower).
   If it wins, run 3b adds edge relax to the other families.
@@ -166,3 +166,4 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   is used in both, with straight-through gradients. D4 screening is rerun as p2_unet_d4st.
 - 1.3 (2026-11-26): phase 2a results recorded; run 3 = run 2 recipe + `RAIN-3` on all 5 families.
 - 1.4 (2026-11-26): D4 + edge relax screening added; r3_unet reuses p2_unet_d4st (identical run).
+- 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
