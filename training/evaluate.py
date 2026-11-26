@@ -84,6 +84,28 @@ def score_shocks(engine: Engine, ds, idx: list[int], std: np.ndarray) -> dict:
     return {"causal_pts": float(np.mean(pts)), "checks": checks}
 
 
+def probe_spread(engine: Engine, ds, idx: list[int], std: np.ndarray, cell=(16, 18)) -> dict:
+    """Effective receptive field, measured: a 1-cell shock (+0.5 std on every channel) at `cell`.
+    r95  = radius (cells) holding 95% of the response energy;  rmax = farthest cell that moved at all
+    (|delta| > 1e-4 std). The judge's day-k 'teleport' radius is 3 + 8k cells from the shock box."""
+    ii, jj = np.indices((C.NLAT, C.NLON))
+    dist = np.sqrt((ii - cell[0]) ** 2 + (jj - cell[1]) ** 2)
+    order = np.argsort(dist.ravel())
+    out = {"r95_day1": [], "rmax_day1": [], "r95_day4": [], "rmax_day4": []}
+    for t in idx:
+        init, doy, _ = _window(ds, t)
+        sc = C.doy_sincos(int(doy))
+        pert = np.zeros((C.NC, C.NLAT, C.NLON), "f4"); pert[:, cell[0], cell[1]] = 0.5 * std
+        d = (engine.simulate(init, sc, STEPS, pert) - engine.simulate(init, sc, STEPS)) / std[None, :, None, None]
+        for k, lab in ((0, "day1"), (3, "day4")):
+            e = (d[k] ** 2).sum(0).ravel()
+            cum = np.cumsum(e[order]) / max(e.sum(), 1e-20)
+            out[f"r95_{lab}"].append(float(dist.ravel()[order][np.searchsorted(cum, 0.95)]) if e.sum() > 0 else 0.0)
+            moved = np.abs(d[k]).max(0) > 1e-4
+            out[f"rmax_{lab}"].append(float(dist[moved].max()) if moved.any() else 0.0)
+    return {k: round(float(np.mean(v)), 2) for k, v in out.items()}
+
+
 def evaluate(spec: dict, split: str = "val", tag: str = "", write: bool = True) -> dict:
     ds = load()
     years = VAL_YEARS if split == "val" else TEST_YEARS
@@ -94,13 +116,14 @@ def evaluate(spec: dict, split: str = "val", tag: str = "", write: bool = True) 
     e = score_windows(engine, ds, list(ev.values()))
     r = score_windows(engine, ds, rnd)
     s = score_shocks(engine, ds, list(ev.values()), std)
+    spread = probe_spread(engine, ds, list(ev.values())[:3], std)
     auto_events = e["rmse_pts"] + e["csi_pts"] + e["blur_pts"] + s["causal_pts"]
     auto_random = r["rmse_pts"] + r["csi_pts"] + r["blur_pts"] + s["causal_pts"]
     gate = bool(e["ss_persist_day4"] > 0 and any(c["warm_ocean"]["localized"] or c["monsoon_stall"]["localized"]
                                                 for c in s["checks"]))
     res = {"time": datetime.now().isoformat(timespec="seconds"), "tag": tag, "model": engine.name, "split": split,
            "auto_events_of_70": round(auto_events, 2), "auto_random_of_70": round(auto_random, 2), "gate": gate,
-           "events": e, "random": r, "shocks": s, "event_windows": {k: int(v) for k, v in ev.items()}}
+           "events": e, "random": r, "shocks": s, "spread": spread, "event_windows": {k: int(v) for k, v in ev.items()}}
     if write:
         _append(res)
     return res
@@ -116,11 +139,14 @@ def _append(res: dict):
            "gate": res["gate"], "ss_events": round(res["events"]["mean_ss"], 4), "ss_random": round(res["random"]["mean_ss"], 4),
            "csi_skill_events": round(res["events"]["mean_csi_skill"], 4), "csi_skill_random": round(res["random"]["mean_csi_skill"], 4),
            "blur_pts_events": round(res["events"]["blur_pts"], 2), "blur_pts_random": round(res["random"]["blur_pts"], 2),
-           "causal_pts": round(res["shocks"]["causal_pts"], 2), "ms_per_rollout": round(res["random"]["ms_per_rollout"], 1)}
+           "causal_pts": round(res["shocks"]["causal_pts"], 2), "ms_per_rollout": round(res["random"]["ms_per_rollout"], 1),
+           **res["spread"]}
     f = runs / "leaderboard.csv"
-    new = not f.exists()
-    with f.open("a", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(row)); w.writeheader() if new else None; w.writerow(row)
+    rows = list(csv.DictReader(f.open(newline=""))) if f.exists() else []
+    rows.append(row)
+    fields = list(dict.fromkeys(k for r in rows for k in r))          # union of columns, first-seen order
+    with f.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=fields, restval=""); w.writeheader(); w.writerows(rows)
 
 
 def main(argv=None):
@@ -145,6 +171,7 @@ def main(argv=None):
         print(f"  {lab:6s} SS={x['mean_ss']:.3f} ({x['rmse_pts']:.1f}/30)  CSI-skill={x['mean_csi_skill']:.3f} ({x['csi_pts']:.1f}/15)"
               f"  blur={x['blur_pts']:.1f}/10 ratios={x['blur_ratio']}  {x['ms_per_rollout']:.0f} ms")
     print(f"  shocks causality={s['causal_pts']:.2f}/15  windows={res['event_windows']}")
+    print(f"  spread of a 1-cell shock (cells): {res['spread']}")
 
 
 if __name__ == "__main__":

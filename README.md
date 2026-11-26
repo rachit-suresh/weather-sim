@@ -80,7 +80,13 @@ Repo scan rules that bite (details in `docs/GRADING_NOTES.md`):
 - No calendar dates or weather-data-source names in `serve.py` or `twin/` (comments included).
 - No `.nc` files and no multi-year `.npy/.npz` archives in the repo.
 
-## Current baselines (val 2018-2019, auto-scored parts out of 70)
+## Model family sweep
+
+Results and lessons: `docs/RESULTS_SWEEP_1.md`. How each model works: `docs/MODEL_FAMILIES.md`,
+`docs/PHYSICS_HYBRID.md`. Finish an interrupted sweep: `bash scripts/resume_sweep.sh <python>`.
+`train_nn.py` saves full training state every epoch (`runs/ckpt/`), so `--resume` continues after a shutdown.
+
+## First baselines (val 2018-2019, auto-scored parts out of 70)
 
 | Model | events | random | notes |
 |---|---|---|---|

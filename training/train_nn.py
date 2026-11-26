@@ -24,7 +24,7 @@ from twin.nets import build_net
 from twin.nets.common import edge_distance, static_features
 from twin.nets.rollout import rollout
 
-from .data import TRAIN_YEARS, VAL_YEARS, load, window_starts
+from .data import ROOT, TRAIN_YEARS, VAL_YEARS, load, window_starts
 
 
 class Tensors:
@@ -66,6 +66,18 @@ def loss_fn(pred, true, lat_w, ch_w, var_w: float):
     return loss
 
 
+def parse_net_config(s: str) -> dict:
+    """'{"width": 48}' (JSON) or 'width=48,rounds=4' (shell friendly, no quotes needed)."""
+    s = s.strip()
+    if not s or s.startswith("{"):
+        return json.loads(s or "{}")
+    out = {}
+    for part in s.split(","):
+        k, v = part.split("=", 1)
+        out[k.strip()] = json.loads(v)          # numbers and true/false parse; bare words need quotes
+    return out
+
+
 def parse_curriculum(s: str) -> list[tuple[int, int]]:
     return [(int(a), int(b)) for a, b in (p.split(":") for p in s.split(","))]
 
@@ -74,7 +86,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--family", required=True)
     ap.add_argument("--name", required=True)
-    ap.add_argument("--net", default="{}", help="json kwargs for the network")
+    ap.add_argument("--net", default="{}", help='network kwargs: JSON or k=v list, e.g. width=48,rounds=4')
     ap.add_argument("--rain", default="none", choices=["none", "sqrt"])
     ap.add_argument("--curriculum", default="1:6,2:4,4:4")
     ap.add_argument("--lr", type=float, default=1e-3)
@@ -85,6 +97,7 @@ def main(argv=None):
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--no-eval", action="store_true")
+    ap.add_argument("--resume", action="store_true", help="continue from runs/ckpt/<name>_last.pt if it exists")
     a = ap.parse_args(argv)
 
     torch.manual_seed(a.seed); np.random.seed(a.seed); torch.set_num_threads(a.threads)
@@ -92,7 +105,7 @@ def main(argv=None):
     codec = Codec(rain_mode=a.rain)
     codec.anom_std = anomaly_std(a.rain)
     T = Tensors(codec, dev)
-    net_cfg = json.loads(a.net)
+    net_cfg = parse_net_config(a.net)
     net = build_net(a.family, **net_cfg).to(dev)
     n_par = sum(p.numel() for p in net.parameters())
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
@@ -105,12 +118,25 @@ def main(argv=None):
 
     best, out_path = float("inf"), ARTIFACTS / "models" / f"{a.name}.pt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    step_count, ep = 0, 0
+    state_path = ROOT / "runs" / "ckpt" / f"{a.name}_last.pt"         # full training state, saved every epoch
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    step_count, ep, done_ep = 0, 0, 0
+    if a.resume and state_path.exists():
+        st = torch.load(state_path, map_location=dev, weights_only=False)
+        if st.get("args") and (st["args"]["curriculum"], st["args"]["batch"]) != (a.curriculum, a.batch):
+            raise SystemExit(f"--resume needs the same --curriculum/--batch as the original run: {st['args']['curriculum']}")
+        net.load_state_dict(st["net"]); opt.load_state_dict(st["opt"]); sched.load_state_dict(st["sched"])
+        step_count, done_ep, best = st["step_count"], st["epoch"], st["best"]
+        np.random.set_state(st["np_rng"]); torch.set_rng_state(st["torch_rng"])
+        print(f"resumed {a.name} after epoch {done_ep} (best val {best:.4f})", flush=True)
     for unroll, n_ep in cur:
         tr_idx = window_starts(T.ds, TRAIN_YEARS, unroll)
         va_idx = window_starts(T.ds, VAL_YEARS, unroll, stride=3)
         for _ in range(n_ep):
-            ep += 1; t0 = time.time(); net.train(); tot = 0.0
+            ep += 1
+            if ep <= done_ep:                                            # finished before the restart
+                continue
+            t0 = time.time(); net.train(); tot = 0.0
             perm = np.random.permutation(tr_idx)
             for i in range(0, len(perm), a.batch):
                 hist, cf, sc, true = T.batch(perm[i:i + a.batch], unroll)
@@ -134,6 +160,11 @@ def main(argv=None):
                 torch.save({"family": a.family, "net_config": net_cfg, "codec": codec.to_dict(),
                             "state_dict": {k: v.cpu() for k, v in net.state_dict().items()},
                             "train_args": vars(a)}, out_path)
+            tmp = state_path.with_suffix(".tmp")                         # write then rename: a power cut never
+            torch.save({"net": net.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(),   # leaves a broken file
+                        "step_count": step_count, "epoch": ep, "best": best, "args": vars(a),
+                        "np_rng": np.random.get_state(), "torch_rng": torch.get_rng_state()}, tmp)
+            tmp.replace(state_path)
     print("saved", out_path, "best val", round(best, 4))
     if not a.no_eval:
         from .evaluate import evaluate
