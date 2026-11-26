@@ -9,7 +9,7 @@ import DetentDial from "@/components/kokonutui/detent-dial";
 import HoldButton from "@/components/kokonutui/hold-button";
 import { SectionTitle, ToggleChip } from "@/components/ui";
 import { VAR_META, VAR_KEYS, GRID, displayUnit, type VarKey } from "@/lib/grid";
-import { MAX_PERTURBATIONS, PRESETS, type Multiverse } from "@/state/useMultiverse";
+import { JUDGE_PRESETS, MAX_PERTURBATIONS, PRESETS, type Multiverse } from "@/state/useMultiverse";
 
 const VAR_ICONS: Record<VarKey, typeof Wind> = {
   t2m: Thermometer, tp: CloudRain, tcwv: Droplets, u10: Wind, v10: Wind, msl: Gauge,
@@ -209,6 +209,36 @@ export default function ShockRail({ m }: { m: Multiverse }) {
         >
           HOLD TO RESET PRIME
         </HoldButton>
+      </div>
+
+      {/* ── official judge shocks ── */}
+      <SectionTitle>JUDGE SHOCKS</SectionTitle>
+      <div className="space-y-1 px-3 pb-2">
+        {JUDGE_PRESETS.map((p) => {
+          const armed = m.queue.some((q) => q.group === p.id);
+          return (
+            <button
+              key={p.id}
+              onClick={() => (armed ? m.removeJudgePreset(p.id) : m.addJudgePreset(p))}
+              className={`group w-full border px-2 py-1.5 text-left transition-all ${
+                armed
+                  ? "border-shock/60 bg-shock/10 glow-shock"
+                  : "border-grid-line bg-abyss/60 hover:border-shock/40"
+              }`}
+              title={p.blurb}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className={`truncate font-pixel text-[8px] ${armed ? "text-shock" : "text-ink-dim group-hover:text-ink"}`}>
+                  {p.label}
+                </span>
+                <span className={`shrink-0 font-mono text-[9px] ${armed ? "text-shock" : "text-ink-faint"}`}>
+                  {armed ? "ARMED ✓" : "ARM"}
+                </span>
+              </div>
+              <div className="mt-0.5 truncate font-mono text-[8px] text-ink-faint">{p.blurb}</div>
+            </button>
+          );
+        })}
       </div>
 
       {/* ── presets ── */}
