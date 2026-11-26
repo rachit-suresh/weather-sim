@@ -233,12 +233,36 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - `V2-F4` Error growth, input noise: during unrolled training, add small Gaussian noise to the model's own state before
   each next step (anomaly space, sigma a fixed fraction of anomaly std, training only), so the model learns to correct
   its own errors instead of amplifying them. Target: uncapped ss at days 4 and 8 (per-lead skill), day-8 blur ratios.
+  **Concrete (branch `v2/f-growth`):** flag `train_nn --unroll-noise SIGMA` (float, default 0 = off). `rollout(...,
+  noise=SIGMA)`: only when `mode == "train"` and SIGMA > 0, after each step k < K-1 the step's output `z_k` (after
+  clamp, rain gate and edge relax) is kept unchanged for the loss, and the copy written into the history for step k+1
+  is `z_k + SIGMA * N(0, 1)` (independent per sample, channel and cell, from torch's seeded global RNG). Space:
+  normalised anomaly, where every channel's anomaly std is 1 (`REP-1`), so SIGMA IS the fraction of the per-channel
+  anomaly std. Rain: the noisy rain anomaly is floored at the dry value (sqrt rain >= 0), so the fed-back state stays
+  physically possible. The 3 true input days are never perturbed; gradients flow through the noisy copy. With
+  SIGMA = 0 no random numbers are drawn, so the run is bit-identical to the baseline. Never at inference: validation
+  loss, `training.evaluate`, `v2_checks` and the server use `mode="infer"`; SIGMA is stored only in `train_args`,
+  never in the checkpoint's `"rollout"` config. The network is unchanged, so reach is unchanged.
+  Run `v2_f4`: `--curriculum 4:2,8:2 --unroll-noise 0.1` (choice of 0.1 explained in `docs/v2/RESULTS_F_GROWTH.md`:
+  ~1% of the anomaly variance, ~4% of r3_cnn's day-1 error variance (day-1 RMSE 0.52 std), white noise that 3x3 convolutions average down).
 - `V2-F5` Error growth, longer horizon: last curriculum stage unrolls 10 days instead of 8 (`4:2,10:2`), so the loss
   sees the full forecast length that is scored. Target: same as `V2-F4`.
+  **Concrete:** run `v2_f5` = `--curriculum 4:2,10:2`, no other flag. The best checkpoint is chosen by the 10-day
+  validation loss of the last stage (its own yardstick; comparisons across runs use only `training.evaluate`, the
+  per-lead curve and `v2_checks`). Report epoch time of the 10-day stage vs the 8-day stage.
+- `V2-F-M` Target measurement for `V2-F4`/`V2-F5` (and `V2-F0`): per-lead skill `SS_L` = mean over the 60 validation
+  random windows (`training.events.random_windows`, 2018-19) of the channel-mean `skill_vs_best_ref` ss at lead L
+  alone (L = 1, 2, 4, 6, 8, 10; reference = min(persistence, climatology) per channel, as the judge). "Beats" = the
+  paired (same-window) mean difference at BOTH L = 4 and L = 8 is > 0 and > 2 standard errors of the paired
+  difference. Day-8 blur ratios = `training.evaluate` random-window `blur_ratio` (per channel, 1 = sharp).
 - Inference-time damping toward climatology is NOT re-tried: `ROL-3` (run 2) lowered error but gave +0.5 to -1.4
   points because error points are capped, and it reduces day-8 variance (blur risk).
 
 ## Change log
+
+- v2 branch `v2/f-growth` (2026-11-27): spec gap fixed in `V2-F4`/`V2-F5` (no flag, noise size, rain handling,
+  or numeric "beats F0" rule): `--unroll-noise` (default 0, baseline unchanged) and SIGMA = 0.1 for `v2_f4`; `v2_f5`
+  selection rule; new `V2-F-M` defines the per-lead skill target and its noise level (2 paired standard errors).
 
 - v2 branch (2026-11-27): section 14b adds fine-tune round F (`V2-F-P`, `V2-F0`..`V2-F5`) after E2-E8 found no winner.
   `train_nn --warm-start` added on the research branch for it (name-and-shape tensor copy, ignored on resume).
