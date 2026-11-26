@@ -1,5 +1,13 @@
 # Teach the emulator to move weather
 
+> **Data-rule correction (added after review).** The track allows only the provided `india_climate_train.nc`
+> (2005-2021, 32 x 36). Every suggestion below that needs outside data is OUT: extra ERA5 years (1979-2004, 2022),
+> IMDAA / IMD datasets, pre-training on a larger box, distillation from global models, and a 2022 test year.
+> E1 becomes: train the final model on all provided years 2005-2021, unroll to 10 days, up-weight cyclone days,
+> and a warm-anchored climatology from a per-cell trend fitted on 2005-2021 only. E6 keeps learned edges and drops
+> large-box pre-training (random crops inside the 32 x 36 grid are still allowed). E2-E5, E7, E8 are unaffected.
+
+
 The 2022-2026 methods most likely to improve v2 are not new backbones. They are three targeted changes. The first is a **structural transport operator inside a single model**: neural semi-Lagrangian advection with operator splitting, as in PARADIS. The second is an **explicit moisture-flux-convergence pathway into the rain head**. The third is a **training-recipe upgrade**: more ERA5 years with a climatology re-centred on the warm end of the record, a soft-CSI term at 10 mm/day, and an AMSE-style spectral loss. v1 already scores 68.0/70 with RMSE points maxed, so the auto-graded headroom is only about 2 points, almost all of it in shocks (13.1/15). The bigger prize is robustness. Heavy-rain CSI sits right on the full-points line, and 2023-24 are warmer than any training year, a shift that makes published ML models behave like a climate 15-20 years older. The cheapest high-value experiments change only data and losses and leave inference untouched. The large architectural bet comes after them: it should make cyclones move without the output blend that cost shock points. Global attention, Fourier/spectral mixing, multi-step diffusion samplers and foundation-model distillation each fail the locality, CPU or data-rule constraints, so drop them. One caveat covers everything here: nearly all the method evidence is global-scale and much of it is 2025-2026 preprints. No paper tests a daily-mean, 1-degree regional emulator or causal shock tests. Every transfer claim below is therefore a hypothesis for the local grader to settle, over several seeds, because the margins are small.
 
 ## Two points of headroom, but the hidden warm years put more at risk

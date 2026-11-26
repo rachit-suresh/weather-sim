@@ -26,7 +26,9 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - `CON-5` Repo scan 15/15 (`scripts/check_repo.py`): no simulate route string in non-server `.py` files, no dates
   or weather-data-source names in server code, no climate data files or multi-year arrays, weights in the repo,
   training code present, README at root, frontend present.
-- `CON-6` No training data from 2023 or later (hidden test period). No outside weather data at inference.
+- `CON-6` Training data = ONLY the provided `india_climate_train.nc` (2005-2021, 32 x 36, 6 variables + 2 static maps)
+  and anything derived from it. No other datasets (no extra ERA5 years, IMDAA, IMD, larger domains, 2022+), no
+  pretrained outside weather models. No outside weather data at inference.
 - `CON-7` (organisers, 2026-11-26) Weights are committed as **plain git files, not Git LFS pointers**: the repo is run
   offline and nothing is downloaded. `.gitattributes` has no LFS rules.
 - `CON-8` (organisers) `artifacts/active.json` points at a real trained model (never the damped baseline or the
@@ -177,6 +179,9 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - Arabian Sea shock box touches the west edge.
 
 ## Change log
+
+- v2 branch (2026-11-26): spec error fixed in `CON-6`: it only banned 2023+ data, implying older outside data was
+  allowed. The track provides one dataset; v2 experiments may only use it and features derived from it.
 
 - 1.0 (2026-11-26): first version from decisions B-J (`docs/DECISIONS.md`) and sweep 1 results.
 - 1.1 (2026-11-26): after run 2. Spec errors fixed: `ROL-3` blend now "keep only if it helps" (was unconditional);
