@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.1 (2026-11-26). **Status:** active.
+**Version:** 1.2 (2026-11-26). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -77,9 +77,10 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - `RAIN-2` Heavy-rain weighting (D5): on the `tp` channel, squared errors at cells where the TRUE rain > 10 mm/day
   count 3x in the training loss.
 - `RAIN-3` Two-part rain head (D4), phase 2 option `--rain-head two_part`: the network outputs a 7th map, a logit
-  for "rain > 1 mm/day". Amount = the usual rain output (sqrt space, >= 0). Training: rain = sigmoid(logit) x amount
-  (smooth, so gradients flow) and a binary cross-entropy loss (weight 0.5) on "true rain > 1 mm". Inference:
-  rain = amount where logit > 0, else 0 (hard gate, deterministic). Merge with D2 + D5 if it wins the screening.
+  for "rain > 1 mm/day". Amount = the usual rain output (sqrt space, >= 0). Rain = amount where logit > 0, else 0
+  (hard gate), in BOTH training and inference, so the rollout always sees the same kind of rain. Training passes
+  gradients through the gate as if it were sigmoid(logit) (straight-through estimator), plus a binary
+  cross-entropy loss (weight 0.5) on "true rain > 1 mm". Merge with D2 + D5 if it wins the screening.
 
 ## 7. Sharpness (decision E)
 
@@ -152,3 +153,6 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.1 (2026-11-26): after run 2. Spec errors fixed: `ROL-3` blend now "keep only if it helps" (was unconditional);
   `VAL-1` now defines the per-window-set auto score. Added `SHP-8` shock stability guard; made `RAIN-3` and
   `EDG-2` concrete; plan: phase 2 screening on U-Net, then run 3 on all top 5 families.
+- 1.2 (2026-11-26): spec error in `RAIN-3`: soft gate in training but hard gate at inference made the forecast
+  rain too high and the 10-day rollout drift (screening run p2_unet_d4: raw 38/22/40 vs 63/68/68). Now the hard gate
+  is used in both, with straight-through gradients. D4 screening is rerun as p2_unet_d4st.

@@ -8,7 +8,8 @@ Options (dict `cfg`, stored in the checkpoint as "rollout"):
   rain_head   "two_part"    spec RAIN-3 (D4): net output channel 6 is the logit of "rain > 1 mm/day"
   rain_ref    {mean, std, anom_std}  global mean/std of rain (mm/day) and the rain anomaly std (sqrt space),
                             needed to turn the gate into anomaly units (rain must use the sqrt transform)
-mode "train" uses a smooth gate (sigmoid x amount), mode "infer" a hard gate (amount where logit > 0).
+Rain gate (spec 1.2): hard (amount where logit > 0, else 0) in both modes; in mode "train" gradients flow as if the
+gate were sigmoid(logit) (straight-through), so training and inference see the same rain.
 """
 from __future__ import annotations
 
@@ -24,7 +25,12 @@ def _gate_rain(z, logit, clim_k, ref, mode):
     """Replace the rain anomaly by the gated amount. clim_k [B,6,H,W] = target-day climatology feature."""
     c = torch.sqrt(torch.relu(clim_k[:, TP] * ref["std"] + ref["mean"]))          # sqrt(climatological rain)
     amount = torch.relu(z[:, TP] * ref["anom_std"] + c)                           # sqrt(rain) >= 0
-    g = torch.sigmoid(logit) if mode == "train" else (logit > 0).to(z.dtype)
+    hard = (logit > 0).to(z.dtype)
+    if mode == "train":                                       # straight-through: forward = hard, gradient = sigmoid
+        soft = torch.sigmoid(logit)
+        g = hard + soft - soft.detach()
+    else:
+        g = hard
     z_tp = (g * amount - c) / ref["anom_std"]
     return torch.cat([z[:, :TP], z_tp[:, None], z[:, TP + 1:]], dim=1)
 
