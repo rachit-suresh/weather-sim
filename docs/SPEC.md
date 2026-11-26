@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.9 (2026-11-26). **Status:** active.
+**Version:** 1.11 (2026-11-26). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -159,6 +159,13 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   per-family comparison.
 - **Submission (decided):** `r3_cnn` (run 3 CNN, D4 rain head). Chosen on the untouched 2020-21 test years:
   test mean 68.0 vs 66.5-67.0 for the other top models (`docs/RESULTS_RUN_3.md`). Ensembles and run 3b did not beat it there.
+- **Phase 2d, CNN + physics blend (team request, after the Amphan walkthrough):** the physics hybrid tracks cyclones
+  (Amphan landfall centre 19.5N vs real 20.5N; CNN stays at 13.5N) but scores lower overall. Blends of `r3_cnn` and
+  `r3_physics` via `BlendEnsemble`: (a) 50/50 all channels; (b) physics for msl, u10, v10 and CNN for t2m, tp, tcwv;
+  (c) 50/50 for msl, u10, v10, CNN for the rest. A blend replaces `r3_cnn` only if its mean of the three window sets is
+  >= r3_cnn's on BOTH validation (67.92) and test (67.96) years, shocks are not lower, and the Amphan track improves.
+  **Result: no blend wins; `r3_cnn` stays.** All three move Amphan to the coast (19.5N at landfall), but on the test
+  years they score 67.38 (a), 66.10 (b), 67.00 (c) with shocks 12.0-12.4 vs 13.12. (b) is best on validation (68.29).
 - **Phase 2c:** ensembles of the best models (equal-weight average, and with `restore_variance`), and
   `SHP-6` CRPS ensemble (E3) on the best family.
 - **Phase 3:** `VAL-4` final retrain, `RUN-1` ONNX chain, brief.
@@ -182,6 +189,8 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.4 (2026-11-26): D4 + edge relax screening added; r3_unet reuses p2_unet_d4st (identical run).
 - 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
 - 1.6 (2026-11-26): D4 + edge relax wins the screening; run 3b adds it to the other 4 families.
+- 1.11 (2026-11-26): phase 2d result recorded: no blend replaces r3_cnn.
+- 1.10 (2026-11-26): phase 2d CNN + physics blend experiment and its acceptance rule.
 - 1.9 (2026-11-26): spec error: `IMP-1` described a rain-deficit crop panel, but the team's merged dashboard implements
   three impact lenses; spec updated to the product (`IMP-1`, new `IMP-2`).
 - 1.8 (2026-11-26): run 3 / 3b / ensembles / test-year check recorded; submission model `r3_cnn`; brief built by

@@ -53,6 +53,21 @@ Restore-variance rescales whole maps, so a 1-cell shock moved cells 18 cells awa
 **Submission model: `r3_cnn`** (`artifacts/active.json`). The only top model that keeps its score on new years,
 simplest, 38 ms per forecast. Kit schema validator passes; a fresh clone without Git LFS serves it.
 
+## Phase 2d: CNN + physics blends (cyclone tracking)
+
+Amphan (May 2020, test year) showed the CNN keeps the cyclone centre at 13.5N while the real one reached the coast
+(20.5N); only the physics hybrid tracked it (19.5N, 988 hPa at landfall). Blends of `r3_cnn` and `r3_physics`:
+
+| Blend | Amphan centre at landfall | Validation mean | Test mean | Test shocks |
+|---|---|---|---|---|
+| `r3_cnn` alone | 13.5N, 993 hPa | 67.92 | **67.96** | **13.12** |
+| (a) 50/50 all channels | 19.5N, 992 hPa | 66.83 | 67.38 | 12.38 |
+| (b) physics pressure + winds, CNN rest | 19.5N, 988 hPa | **68.29** | 66.10 | 12.00 |
+| (c) 50/50 pressure + winds, CNN rest | 19.5N, 992 hPa | 67.92 | 67.00 | 12.00 |
+
+Every blend tracks the cyclone, none holds the score on the test years: mixing two models' outputs weakens the shock
+response consistency (shock points 12.0-12.4). Kept `r3_cnn` per the spec rule.
+
 ## Errors found in this phase
 
 | Type | What | Fix |
