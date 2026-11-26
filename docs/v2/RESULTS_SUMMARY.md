@@ -86,4 +86,13 @@ Amphan (2020, test year) is reported in each branch's results but never used to 
   fills the capped CSI points on val but costs RMSE on test random (ss 0.118 -> 0.112). Fani landfall lat -6.0; wind-shock
   rain -1.10 mm (75%). E2 is closed (both allowed settings used).
 - **E7b**: E7 with a day-1 reach budget of at most 10 cells by construction plus a targeted shock-stability fix, warm-started from `v2_e7`. Branch `v2/e7-advect-correct`.
+  **E7b loses** (334a2f8). Diagnosis on v2_e7: the warm_ocean overshoot is always rain on days 1-6, and replaying the
+  unshocked velocity barely changes it, so the correction/output path amplifies rain, not the velocity head. E7's
+  theoretical day-1 reach was sqrt(2) x 11 + 3 = 18.6 cells (measured 11.09). E7b: bilinear lookups, cap 2.5, blocks 1-2
+  turned into 1x1, bound 9.57 by construction, plus the SHP-8 shock guard. Val 65.07 / 66.11 / 67.75, mean 66.31 (-1.61);
+  test 63.18 / 64.82 / 67.75, mean 65.25 (-2.71); shocks 12.75 / 12.75; reach 6.77 / 7.00. CSI fell (test events 0.070).
+  **Best cyclone track of any model**: Fani 308 / 104 / 528 km, landfall latitude exact; wind-shock rain -1.94 mm (92%).
+  Spec error (protocol): two changes at once, so the CSI loss cannot be attributed.
+- **E7c** (final run): the reach budget alone, no shock guard, keeping more 3x3 capacity (theoretical bound <= 13,
+  measured <= 10). Result appended when done.
 - Not repeated: E4, E5, E6, E8 (failure is in the method for our scoring, not the setting).
