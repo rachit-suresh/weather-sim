@@ -20,8 +20,8 @@ def sincos(doy: float) -> np.ndarray:
 
 
 def clim_index(doy: float) -> int:
-    """Index into a [366, ...] climatology built on a leap-year calendar (slot 59 = 29 Feb, as in
-    monsoon_r1.stats). The API day count has no leap day, so days from 1 Mar onward skip slot 59.
+    """Index into a [366, ...] climatology built on a leap-year calendar (slot 59 = the leap day, as in
+    monsoon_r1.stats). The API day count has no leap day, so day 59 and later skip slot 59.
     Off-by-one in the caller's day convention only shifts a 15-day-smoothed field by one day."""
     k = int(round(doy)) % 365
     return k + 1 if k >= 59 else k

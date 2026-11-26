@@ -10,7 +10,8 @@ npz contents:
   q_true    [4, L, Q]    rain quantiles of the truth, same layout
   rainmap_on  [] bool    whether the rain map is used (chosen on validation years)
   blend_on    [] bool    whether the blend is used (spec 1.1 ROL-3; files without it: off)
-Seasons: 0 = Dec-Feb, 1 = Mar-May, 2 = Jun-Sep, 3 = Oct-Nov (by day of year).
+Seasons by day of year d (0-based): 0 = winter (d < 59 or d >= 334), 1 = pre-monsoon (59 <= d < 151),
+2 = monsoon (151 <= d < 273), 3 = post-monsoon (273 <= d < 334).
 """
 from __future__ import annotations
 
