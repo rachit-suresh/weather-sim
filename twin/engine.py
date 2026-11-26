@@ -21,13 +21,17 @@ log = logging.getLogger("twin")
 
 class Engine:
     def __init__(self, spec: dict | None = None):
-        self.spec = spec or active_spec()
-        self.model: TwinModel = build_model(self.spec)
         try:
             self.fallback: TwinModel = build_model({"model": "damped_anomaly"})
         except Exception:                                   # artifacts missing: last resort
             self.fallback = build_model({"model": "persistence"})
-        self.model.warmup()
+        try:                                                # spec ARC-3: the server must always start
+            self.spec = spec or active_spec()
+            self.model: TwinModel = build_model(self.spec)
+            self.model.warmup()
+        except Exception as e:
+            log.error("active model failed to load (%s: %s); serving fallback %s", type(e).__name__, e, self.fallback.name)
+            self.spec, self.model = {"model": "fallback"}, self.fallback
 
     @property
     def name(self) -> str:

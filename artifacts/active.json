@@ -1,1 +1,1 @@
-{"model": "damped_anomaly"}
+{"model": "neural", "checkpoint": "models/r3_cnn.pt"}

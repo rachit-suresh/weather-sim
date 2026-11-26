@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.6 (2026-11-26). **Status:** active.
+**Version:** 1.7 (2026-11-26). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -27,14 +27,19 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   or weather-data-source names in server code, no climate data files or multi-year arrays, weights in the repo,
   training code present, README at root, frontend present.
 - `CON-6` No training data from 2023 or later (hidden test period). No outside weather data at inference.
+- `CON-7` (organisers, 2026-11-26) Weights are committed as **plain git files, not Git LFS pointers**: the repo is run
+  offline and nothing is downloaded. `.gitattributes` has no LFS rules.
+- `CON-8` (organisers) `artifacts/active.json` points at a real trained model (never the damped baseline or the
+  starter's placeholder). The kit's schema validator passes against `python serve.py --port 8000` before every push.
+- `CON-9` (organisers) The 2-page brief is a PDF in the repo: `BRIEF.pdf` at the root. Deadline: 2026-11-27 10:00.
 
 ## 2. Architecture
 
 - `ARC-1` `serve.py` (HTTP only) -> `twin/engine.py` (shock, clamps, fallback) -> active model from
   `artifacts/active.json`. Server-side code lives only in `serve.py` and `twin/`.
 - `ARC-2` Training, fitting and evaluation live in `training/` and are never imported by the server.
-- `ARC-3` Crash fallback: if the active model raises or returns non-finite values, the damped-anomaly baseline
-  answers (deterministic).
+- `ARC-3` Crash fallback: if the active model fails to LOAD, or raises / returns non-finite values while
+  forecasting, the damped-anomaly baseline answers (deterministic). The server must always start.
 - `ARC-4` Dashboard in `dashboard/` (HTML/CSS/JS), talks to the server over HTTP only; contract and DO NOTs in
   `docs/DASHBOARD_API.md`. Owned by the visualisation teammate.
 
@@ -172,3 +177,5 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.4 (2026-11-26): D4 + edge relax screening added; r3_unet reuses p2_unet_d4st (identical run).
 - 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
 - 1.6 (2026-11-26): D4 + edge relax wins the screening; run 3b adds it to the other 4 families.
+- 1.7 (2026-11-26): organiser checklist: `CON-7` plain-git weights, `CON-8` real active model + validator,
+  `CON-9` brief PDF. Spec error fixed: `ARC-3` did not cover a model that fails to load (server would not start).
