@@ -213,6 +213,10 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 
 ## Change log
 
+- v2 branch (2026-11-27): iGPU (AMD 780M via DirectML) evaluated for training and rejected: no complex numbers (FFT
+  loss), CPU-saved states do not resume on it, and a real training epoch was far slower (301 s for a tiny model vs
+  seconds on CPU) because of per-operation overhead. All v2 training stays on CPU (`V2-RES`).
+
 - v2 branch (2026-11-26): section 14 defines v2 experiments E2-E8, the protocol, win rule and resource rule.
 
 - v2 branch (2026-11-26): spec error fixed in `CON-6`: it only banned 2023+ data, implying older outside data was
