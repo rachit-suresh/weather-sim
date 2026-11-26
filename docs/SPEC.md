@@ -106,6 +106,7 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - `SHP-8` Shock stability guard (new, phase 2 option `--shock-loss`): on every 4th training batch, also roll out the
   batch with a warm-ocean-style shock (+3 K t2m, +15% tcwv) in a random 12 x 12 box, and add
   `w x mean(relu(|shocked - base| / channel_std - 4)^2)` in physical units (judge's limit is 5 std, 4 leaves margin).
+  v2 options (defaults keep this behaviour): `--shock-channels`, `--shock-hinge`, `--shock-box` (see `V2-F3`).
 - `SHP-7` Post-processing order: blend (`ROL-3`) -> rescale (`SHP-3`) -> rain map (`SHP-4`) -> clamp (`CON-3`).
   Stored in `artifacts/post/<name>.npz`, applied by a deterministic wrapper model.
 
@@ -230,6 +231,28 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - `V2-F3` Rain stability guard: the `SHP-8` shock guard applied to the rain channel only, as a hinge that is zero while
   the rain response stays below 3.5 judge-std and grows above it (judge limit 5; r3_cnn sits at 4.1-4.6, E7 overshot
   in rain). Target: warm_ocean "stable" worst-case std and shock points, without losing csi_skill.
+  Concrete (run `v2_f3`, branch `v2/f-guard`):
+  - Flags (new in `train_nn`, defaults = current `SHP-8`, so other runs do not change): `--shock-channels all|tp`
+    (default `all`), `--shock-hinge H` (default 4.0), `--shock-box random|warm_ocean` (default `random`). F3 uses
+    `--shock-loss 3 --shock-channels tp --shock-hinge 3.5 --shock-box warm_ocean`, every 4th batch as in `SHP-8`.
+  - Perturbation = the judge's `make_shock("warm_ocean")` (monsoon_r1.scoring): on the last input day only, +3 K t2m
+    and +15% of that day's physical tcwv on every cell of `BOX_BAY_OF_BENGAL` (lat 8-20, lon 82-94: 12 x 12 cells,
+    land cells included), converted to anomaly units with the codec (t2m and tcwv are linear). tcwv uses the
+    climatology of the last input day (the judge's `init_states[-1]`), not the first target day.
+  - Response = shocked rollout minus unshocked rollout of the same batch (both `mode="train"`, the hard rain gate with
+    straight-through gradients, same unroll as the data loss), rain decoded to mm/day (sqrt transform inverted),
+    divided by the judge's rain std (`artifacts/stats.json` std[tp] = 7.553 mm/day, the `std` that `evaluate` and the
+    judge pass to `causality_checks`).
+  - Penalty = `W x mean over batch, lead days and cells of relu(|response_tp| / std_tp - 3.5)^2`; zero while every
+    cell stays under 3.5 judge std.
+  - W = 3, chosen by reasoning, not on val/test: E7b's all-channel guard (`--shock-loss 20`, mean over 6 channels)
+    was in practice rain-only (warm_ocean moves t2m by 0.22 and tcwv by 0.37 std at the start, far below the hinge), so
+    its per-rain-cell strength was 20 / 6 = 3.3; rounded down to 3 because the lower hinge (3.5 vs 4) already makes
+    r3_cnn's worst cells (4.1-4.6 std) cost 2-4x more. Per violating heavy-rain cell this is ~1.5-6x the gradient of
+    the data loss, and zero elsewhere. Pre-run check on training windows only: report the share of guard batches
+    with a non-zero penalty at the warm start (if it is 0, the run is a no-op and the spec is revisited).
+  - Diagnostic (reported, not used to choose): per warm_ocean event window, the worst-case |shocked - base| in judge
+    std over all channels, cells and 10 days (the number the judge compares with 5), val and test.
 - `V2-F4` Error growth, input noise: during unrolled training, add small Gaussian noise to the model's own state before
   each next step (anomaly space, sigma a fixed fraction of anomaly std, training only), so the model learns to correct
   its own errors instead of amplifying them. Target: uncapped ss at days 4 and 8 (per-lead skill), day-8 blur ratios.
@@ -239,6 +262,10 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   points because error points are capped, and it reduces day-8 variance (blur risk).
 
 ## Change log
+
+- v2 branch `v2/f-guard` (2026-11-27): `V2-F3` made concrete (flags `--shock-channels`, `--shock-hinge`,
+  `--shock-box`; judge warm_ocean box and std; hinge 3.5; W = 3 by reasoning). Spec gap fixed: `SHP-8` used a random
+  12 x 12 box and the next target day's climatology for the tcwv shock; F3 uses the judge's box and the last input day.
 
 - v2 branch (2026-11-27): section 14b adds fine-tune round F (`V2-F-P`, `V2-F0`..`V2-F5`) after E2-E8 found no winner.
   `train_nn --warm-start` added on the research branch for it (name-and-shape tensor copy, ignored on resume).
