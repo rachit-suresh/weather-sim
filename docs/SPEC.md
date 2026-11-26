@@ -211,7 +211,37 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - `V2-E8` Fixed-seed CRPS residual head: per-pixel noise from a fixed seed independent of the input, 2-4 members in
   training with almost-fair CRPS, serve one fixed member. Target: sharpness and csi_skill; determinism must hold.
 
+### 14b. Fine-tune round F (after E2-E8: no winner; team-approved targets)
+
+- `V2-F-P` Protocol. Every F run starts from `r3_cnn`'s weights (`train_nn --warm-start models/r3_cnn.pt`: copy every
+  tensor whose name and shape match) and fine-tunes with the r3_cnn recipe on 2005-2017 for the same schedule:
+  `--curriculum 4:2,8:2 --lr 3e-4`, seed 0, best val loss in the last stage. Exception: `V2-F5` changes the last stage
+  only (see there). Each F run changes ONE thing. `V2-F0` (no change) is the control: an F run wins only if it passes
+  `V2-WIN` against `r3_cnn` AND its target metric beats `V2-F0` (so the gain is not just "more training"). Same data
+  rule (`CON-6`), same guards, CPU only. Winners are then combined (one spec entry first), get 3 seeds, and the
+  combined recipe is applied to `final_cnn` (2005-2021) as the v1.2 candidate. Warming-trend climatology: on hold.
+- `V2-F0` Control: fine-tune with no change.
+- `V2-F1` Cyclone oversampling: training windows whose target days contain a deep low over the sea (msl anomaly below a
+  threshold over Bay of Bengal / Arabian Sea sea cells; threshold calibrated on 2005-2017 only) are drawn 4x as often.
+  Target: Fani track error d1-3 and landfall latitude (Amphan report only).
+- `V2-F2` Heavy-rain oversampling: training windows whose target days have a heavy-rain area (cells > 10 mm/day) in the
+  top 10% of 2005-2017 days are drawn 4x as often. Target: csi_skill val+test, with the heavy-rain frequency bias kept
+  inside 0.8-1.6 (lesson from E2/E2b: CSI bought by over-forecasting is not a gain).
+- `V2-F3` Rain stability guard: the `SHP-8` shock guard applied to the rain channel only, as a hinge that is zero while
+  the rain response stays below 3.5 judge-std and grows above it (judge limit 5; r3_cnn sits at 4.1-4.6, E7 overshot
+  in rain). Target: warm_ocean "stable" worst-case std and shock points, without losing csi_skill.
+- `V2-F4` Error growth, input noise: during unrolled training, add small Gaussian noise to the model's own state before
+  each next step (anomaly space, sigma a fixed fraction of anomaly std, training only), so the model learns to correct
+  its own errors instead of amplifying them. Target: uncapped ss at days 4 and 8 (per-lead skill), day-8 blur ratios.
+- `V2-F5` Error growth, longer horizon: last curriculum stage unrolls 10 days instead of 8 (`4:2,10:2`), so the loss
+  sees the full forecast length that is scored. Target: same as `V2-F4`.
+- Inference-time damping toward climatology is NOT re-tried: `ROL-3` (run 2) lowered error but gave +0.5 to -1.4
+  points because error points are capped, and it reduces day-8 variance (blur risk).
+
 ## Change log
+
+- v2 branch (2026-11-27): section 14b adds fine-tune round F (`V2-F-P`, `V2-F0`..`V2-F5`) after E2-E8 found no winner.
+  `train_nn --warm-start` added on the research branch for it (name-and-shape tensor copy, ignored on resume).
 
 - v2 branch (2026-11-27): iGPU (AMD 780M via DirectML) evaluated for training and rejected: no complex numbers (FFT
   loss), CPU-saved states do not resume on it, and a real training epoch was far slower (301 s for a tiny model vs
