@@ -68,6 +68,15 @@ Amphan (May 2020, test year) showed the CNN keeps the cyclone centre at 13.5N wh
 Every blend tracks the cyclone, none holds the score on the test years: mixing two models' outputs weakens the shock
 response consistency (shock points 12.0-12.4). Kept `r3_cnn` per the spec rule.
 
+## Final release v1.1: same recipe retrained on all 2005-2021 (spec `VAL-4`)
+
+`artifacts/models/final_cnn.pt`, trained with `--train-years 2005-2021 --final` (last epoch kept). All acceptance
+checks passed (2026-11-27 00:30): loads as the real model; valid outputs on 20 random windows; zero shock == null;
+day-1 reach 9.9 cells (limit 11); mean auto score 67.63 on 2018-19 and 68.88 on 2020-21 (both now IN the training
+data, so optimistic; rule was >= r3_cnn - 0.5: 67.42 / 67.46); Amphan 2-day landfall rain 63 mm vs real 69 mm;
+June-2019 central India 10-day rain 8 mm vs real 10 mm (deficit captured). `artifacts/active.json` now serves it;
+`r3_cnn.pt` stays in the repo as the measured reference.
+
 ## Errors found in this phase
 
 | Type | What | Fix |
