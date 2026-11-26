@@ -244,7 +244,7 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   loss, `training.evaluate`, `v2_checks` and the server use `mode="infer"`; SIGMA is stored only in `train_args`,
   never in the checkpoint's `"rollout"` config. The network is unchanged, so reach is unchanged.
   Run `v2_f4`: `--curriculum 4:2,8:2 --unroll-noise 0.1` (choice of 0.1 explained in `docs/v2/RESULTS_F_GROWTH.md`:
-  ~1% of the anomaly variance, ~4% of r3_cnn's day-1 error variance (day-1 RMSE 0.52 std), white noise that 3x3 convolutions average down).
+  ~1% of the anomaly variance, ~4% of r3_cnn's day-1 error variance (day-1 RMSE 0.52 std); the residual step `z = last + delta` carries the noise forward 1:1, so the net must learn to remove it).
 - `V2-F5` Error growth, longer horizon: last curriculum stage unrolls 10 days instead of 8 (`4:2,10:2`), so the loss
   sees the full forecast length that is scored. Target: same as `V2-F4`.
   **Concrete:** run `v2_f5` = `--curriculum 4:2,10:2`, no other flag. The best checkpoint is chosen by the 10-day

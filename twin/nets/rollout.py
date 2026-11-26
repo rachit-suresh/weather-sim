@@ -8,6 +8,8 @@ Options (dict `cfg`, stored in the checkpoint as "rollout"):
   rain_head   "two_part"    spec RAIN-3 (D4): net output channel 6 is the logit of "rain > 1 mm/day"
   rain_ref    {mean, std, anom_std}  global mean/std of rain (mm/day) and the rain anomaly std (sqrt space),
                             needed to turn the gate into anomaly units (rain must use the sqrt transform)
+Training-only input noise (spec V2-F4): rollout(..., noise=sigma) with mode "train" and sigma > 0 feeds
+z + sigma * N(0, 1) (rain floored at dry) into the next step; the returned (scored) z is clean. Off at inference.
 Rain gate (spec 1.2): hard (amount where logit > 0, else 0) in both modes; in mode "train" gradients flow as if the
 gate were sigmoid(logit) (straight-through), so training and inference see the same rain.
 """
@@ -35,8 +37,18 @@ def _gate_rain(z, logit, clim_k, ref, mode):
     return torch.cat([z[:, :TP], z_tp[:, None], z[:, TP + 1:]], dim=1)
 
 
+def _noisy(z, sigma, clim_k, ref):
+    """V2-F4: z + sigma * N(0,1) per cell; rain anomaly floored at the dry value (sqrt rain >= 0) if ref is given."""
+    zn = z + sigma * torch.randn_like(z)
+    if ref is None:
+        return zn
+    dry = -torch.sqrt(torch.relu(clim_k[:, TP] * ref["std"] + ref["mean"])) / ref["anom_std"]
+    return torch.cat([zn[:, :TP], torch.maximum(zn[:, TP], dry)[:, None], zn[:, TP + 1:]], dim=1)
+
+
 def rollout(net, hist: torch.Tensor, clim_targets: torch.Tensor, sincos_targets: torch.Tensor,
-            fixed: torch.Tensor, steps: int, cfg: dict | None = None, mode: str = "train", return_logits: bool = False):
+            fixed: torch.Tensor, steps: int, cfg: dict | None = None, mode: str = "train", return_logits: bool = False,
+            noise: float = 0.0):
     """hist [B,3,6,H,W]; clim_targets [B,steps,6,H,W]; sincos_targets [B,steps,2] -> [B,steps,6,H,W] anomalies
     (and [B,steps,H,W] rain logits if return_logits and the two-part head is on)."""
     cfg = cfg or {}
@@ -60,6 +72,8 @@ def rollout(net, hist: torch.Tensor, clim_targets: torch.Tensor, sincos_targets:
         if relax is not None:
             z = z * relax
         outs.append(z)
+        if noise > 0 and mode == "train" and k < steps - 1:          # V2-F4: perturb only the fed-back copy
+            z = _noisy(z, noise, clim_targets[:, k], cfg.get("rain_ref"))
         hist = torch.cat([hist[:, 1:], z[:, None]], dim=1)
     z_all = torch.stack(outs, dim=1)
     if return_logits:

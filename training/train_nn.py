@@ -156,6 +156,8 @@ def main(argv=None):
     ap.add_argument("--rain-head", default="none", choices=["none", "two_part"], help="RAIN-3 D4")
     ap.add_argument("--rain-bce", type=float, default=0.5, help="RAIN-3 weight of the rain/no-rain loss")
     ap.add_argument("--shock-loss", type=float, default=0.0, help="SHP-8 weight of the shock stability guard")
+    ap.add_argument("--unroll-noise", type=float, default=0.0, help="V2-F4: training-only N(0, sigma) noise (anomaly "
+                    "std units) on the model's own state fed into the next unrolled step; 0 = off")
     ap.add_argument("--weight-decay", type=float, default=None, help="default 1e-4, or 1e-3 with --latlon")
     ap.add_argument("--channel-weights", default="1,1,1,1,1,1")
     ap.add_argument("--seed", type=int, default=0)
@@ -201,7 +203,7 @@ def main(argv=None):
     ps = PhysScale(codec, dev) if a.shock_loss > 0 else None
     bce = torch.nn.BCEWithLogitsLoss()
     print(f"{a.family} {net_cfg} params={n_par:,} device={dev} rain={a.rain} curriculum={cur} "
-          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd}")
+          f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd} unroll_noise={a.unroll_noise}")
 
     best, out_path = float("inf"), ARTIFACTS / "models" / f"{a.name}.pt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -227,7 +229,8 @@ def main(argv=None):
             perm = np.random.permutation(tr_idx)
             for bi, i in enumerate(range(0, len(perm), a.batch)):
                 hist, cf, sc, true, heavy, wet = T.batch(perm[i:i + a.batch], unroll)
-                pred, logits = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="train", return_logits=True)
+                pred, logits = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="train", return_logits=True,
+                                       noise=a.unroll_noise)
                 loss = loss_fn(pred, true, lat_w, ch_w, a.var_loss, a.spec_loss, heavy, a.heavy_weight)
                 if logits is not None:                                   # RAIN-3: learn "will it rain?"
                     loss = loss + a.rain_bce * bce(logits, wet.to(logits.dtype))
