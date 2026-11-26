@@ -84,6 +84,52 @@ def loss_fn(pred, true, lat_w, ch_w, var_w: float = 0.0, spec_w: float = 0.0, he
     return loss
 
 
+def dct_matrix(n: int) -> torch.Tensor:
+    """Orthonormal DCT-II matrix C [n, n]: X = C @ x, x = C.T @ X."""
+    k = np.arange(n)[:, None]; i = np.arange(n)[None, :]
+    c = np.sqrt(2.0 / n) * np.cos(np.pi * (2 * i + 1) * k / (2 * n))
+    c[0] /= np.sqrt(2.0)
+    return torch.tensor(c, dtype=torch.float32)
+
+
+class AMSE:
+    """V2-E4 adjusted MSE (Subich et al. 2025) on the 2-D DCT of each latitude-weighted anomaly map.
+    Per radial band b: (sqrt(P) - sqrt(T))^2 + 2 max(P, T) (1 - X / sqrt(P T)); summed over bands / (H W)."""
+
+    EPS = 1e-4                       # keeps coherence gradients finite when a band has ~no power
+
+    def __init__(self, lat_w: torch.Tensor, h: int = NLAT, w: int = NLON):
+        dev = lat_w.device
+        self.ch, self.cw = dct_matrix(h).to(dev), dct_matrix(w).to(dev)
+        self.sw = lat_w.sqrt()                                             # [H,1]: sum of squares = lat-weighted
+        ii, jj = np.indices((h, w))
+        band = np.rint(np.sqrt((ii * w / h) ** 2 + jj ** 2)).astype(int).ravel()
+        onehot = np.zeros((h * w, band.max() + 1), np.float32); onehot[np.arange(h * w), band] = 1.0
+        self.bands = torch.from_numpy(onehot[:, onehot.sum(0) > 0]).to(dev)   # [H*W, n_bands]
+        self.hw = h * w
+
+    def dct2(self, x):
+        return self.ch @ (x * self.sw) @ self.cw.T
+
+    def per_map(self, pred, true):
+        """[..., H, W] -> [...] AMSE per map (MSE scale: mean over cells)."""
+        fp, ft = self.dct2(pred).flatten(-2), self.dct2(true).flatten(-2)
+        P, T, X = (fp * fp) @ self.bands, (ft * ft) @ self.bands, (fp * ft) @ self.bands
+        coh = (X / torch.sqrt(P * T + self.EPS)).clamp(-1.0, 1.0)
+        amp = (torch.sqrt(P + self.EPS) - torch.sqrt(T + self.EPS)) ** 2
+        return (amp + 2.0 * torch.maximum(P, T) * (1.0 - coh)).sum(-1) / self.hw
+
+
+def amse_loss_fn(pred, true, amse: AMSE, lat_w, ch_w, heavy=None, heavy_w: float = 1.0):
+    """V2-E4: AMSE per channel replaces MSE + SHP-1 + SHP-2; RAIN-2 stays as a separate pointwise term
+    ((heavy_w - 1) x lat-weighted squared error at heavy-rain cells), so heavy cells still count heavy_w x in total."""
+    per_ch = amse.per_map(pred, true).mean(dim=(0, 1))                  # [6]
+    if heavy is not None and heavy_w != 1.0:
+        extra = ((pred[:, :, TP] - true[:, :, TP]) ** 2 * lat_w * heavy.to(pred.dtype)).mean() * (heavy_w - 1.0)
+        per_ch = per_ch + extra * torch.nn.functional.one_hot(torch.tensor(TP), per_ch.numel()).to(per_ch)
+    return (per_ch * ch_w).sum() / ch_w.sum()
+
+
 class PhysScale:
     """Turns anomaly differences into physical differences in units of the judge's channel std (SHP-8)."""
 
@@ -150,6 +196,8 @@ def main(argv=None):
     ap.add_argument("--var-loss", type=float, default=0.1)                              # SHP-1
     ap.add_argument("--spec-loss", type=float, default=0.05)                            # SHP-2
     ap.add_argument("--heavy-weight", type=float, default=3.0)                          # RAIN-2
+    ap.add_argument("--loss", default="mse", choices=["mse", "amse"],
+                    help="mse = lat-weighted MSE + SHP-1 + SHP-2 (baseline); amse = V2-E4 DCT AMSE (ignores --var-loss/--spec-loss)")
     # phase 2 options (spec 1.1)
     ap.add_argument("--edge-relax", action="store_true", help="EDG-2 F4: pull edge cells toward normal")
     ap.add_argument("--latlon", action="store_true", help="EDG-2 F6: lat/lon input maps (weight decay 1e-3)")
@@ -191,7 +239,12 @@ def main(argv=None):
     ch_w = torch.tensor([float(x) for x in a.channel_weights.split(",")], device=dev)
     ps = PhysScale(codec, dev) if a.shock_loss > 0 else None
     bce = torch.nn.BCEWithLogitsLoss()
-    print(f"{a.family} {net_cfg} params={n_par:,} device={dev} rain={a.rain} curriculum={cur} "
+    amse = AMSE(lat_w) if a.loss == "amse" else None                   # V2-E4
+    if amse is not None:
+        train_loss = lambda p, t, h: amse_loss_fn(p, t, amse, lat_w, ch_w, h, a.heavy_weight)
+    else:
+        train_loss = lambda p, t, h: loss_fn(p, t, lat_w, ch_w, a.var_loss, a.spec_loss, h, a.heavy_weight)
+    print(f"{a.family} {net_cfg} params={n_par:,} device={dev} rain={a.rain} curriculum={cur} loss={a.loss} "
           f"options: edge_relax={a.edge_relax} latlon={a.latlon} rain_head={a.rain_head} shock_loss={a.shock_loss} wd={wd}")
 
     best, out_path = float("inf"), ARTIFACTS / "models" / f"{a.name}.pt"
@@ -219,7 +272,7 @@ def main(argv=None):
             for bi, i in enumerate(range(0, len(perm), a.batch)):
                 hist, cf, sc, true, heavy, wet = T.batch(perm[i:i + a.batch], unroll)
                 pred, logits = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="train", return_logits=True)
-                loss = loss_fn(pred, true, lat_w, ch_w, a.var_loss, a.spec_loss, heavy, a.heavy_weight)
+                loss = train_loss(pred, true, heavy)
                 if logits is not None:                                   # RAIN-3: learn "will it rain?"
                     loss = loss + a.rain_bce * bce(logits, wet.to(logits.dtype))
                 if ps is not None and bi % 4 == 0:                       # SHP-8: every 4th batch
@@ -230,14 +283,17 @@ def main(argv=None):
                 if step_count < total_steps:
                     sched.step(); step_count += 1
                 tot += loss.item() * len(hist)
-            net.eval(); vl = 0.0
+            net.eval(); vl, va = 0.0, 0.0
             with torch.no_grad():
                 for i in range(0, len(va_idx), 128):
                     hist, cf, sc, true, _, _ = T.batch(va_idx[i:i + 128], unroll)
                     pv = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="infer")
                     vl += loss_fn(pv, true, lat_w, ch_w).item() * len(hist)          # plain MSE, inference mode
+                    if amse is not None:                                             # V2-E4: logged, not used to choose
+                        va += amse_loss_fn(pv, true, amse, lat_w, ch_w).item() * len(hist)
             vl /= len(va_idx)
-            print(f"ep {ep:3d} unroll {unroll}  train {tot / len(tr_idx):.4f}  val {vl:.4f}  {time.time() - t0:.0f}s", flush=True)
+            extra = f"  val_amse {va / len(va_idx):.4f}" if amse is not None else ""
+            print(f"ep {ep:3d} unroll {unroll}  train {tot / len(tr_idx):.4f}  val {vl:.4f}{extra}  {time.time() - t0:.0f}s", flush=True)
             if unroll == cur[-1][0] and vl < best:
                 best = vl
                 torch.save({"family": a.family, "net_config": net_cfg, "codec": codec.to_dict(),

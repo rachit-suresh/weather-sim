@@ -201,6 +201,22 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   response to the monsoon_stall shock and csi_skill; check reach (stencil widens it by 1 cell).
 - `V2-E4` AMSE loss: replace MSE + FFT-amplitude with adjusted MSE on a 2-D DCT of each anomaly map (amplitude term +
   coherence term weighted by the larger spectrum). Target: day-8 variance ratios nearer 1 and uncapped ss.
+  Concretely (`--loss amse`; default `--loss mse` keeps the baseline loss unchanged): for every sample, step and
+  channel, multiply the anomaly map by sqrt(cos-lat weight) (same weighting as the MSE), take the orthonormal 2-D
+  DCT-II (precomputed 32x32 and 36x36 matrices, two matmuls), and group coefficients (i, j) into radial bands
+  b = round(sqrt((36 i / 32)^2 + j^2)) (b = 0 is the map mean). Per band, with P = sum pred^2, T = sum true^2,
+  X = sum pred*true: AMSE_b = (sqrt(P) - sqrt(T))^2 + 2 max(P, T) (1 - X / sqrt(P T)). Loss per map = sum_b AMSE_b /
+  (32 * 36), so it is >= the latitude-weighted MSE of that map (equal when every band has matching power and
+  coherence 1) and 0 for identical maps. It replaces the MSE AND both sharpness terms (`SHP-1` spread and `SHP-2`
+  FFT amplitude: the per-band amplitude term already covers the spatial spread). All 6 channels including rain
+  (sqrt space, `REP-4`) use it with channel weight 1. `RAIN-2` is kept as a separate pointwise term: + (3 - 1) x
+  lat-weighted squared error at heavy-rain cells on `tp`, so heavy cells still count 3x in total. `RAIN-3` BCE is
+  unchanged. Checkpoint choice stays the baseline's (plain latitude-weighted MSE on validation windows, last stage).
+  Training only: inference, checkpoint format and serving are unchanged.
+  **Result (`v2_e4`, `docs/v2/RESULTS_E4.md`): LOSES.** Day-8 variance ratios nearer 1 on every window set, but uncapped
+  ss falls (random val 0.138 -> 0.093, test 0.118 -> 0.074), means val 64.72 / test 63.01 vs 67.92 / 67.96, shocks
+  12.75 / 12.38 vs 13.12. Spec error in the target: for one deterministic forecast, sharper fields and better ss trade
+  off under AMSE (the paper measured CRPS / ensemble RMSE, not deterministic RMSE).
 - `V2-E5` Rain likelihood: train the rain amount with a Bernoulli-gamma (or Tweedie) likelihood instead of squared error
   (keep the gate). Target: csi_skill and rain RMSE.
 - `V2-E6` Learned edges: zero padding in anomaly space instead of replicate, edge-distance input kept, random crops
@@ -212,6 +228,11 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   training with almost-fair CRPS, serve one fixed member. Target: sharpness and csi_skill; determinism must hold.
 
 ## Change log
+
+- v2/e4-amse (2026-11-26): spec error (missing detail) in `V2-E4`: it did not say whether `SHP-1` spread loss and the
+  `RAIN-2` heavy-rain weight stay, nor how bands, latitude weighting and checkpoint selection work. Now concrete: AMSE
+  replaces MSE + `SHP-1` + `SHP-2`; `RAIN-2` kept as a separate pointwise term; radial DCT bands; `--loss amse` flag.
+- v2/e4-amse (2026-11-27): `V2-E4` result recorded (loses); spec error in its target noted (sharpness vs ss trade-off).
 
 - v2 branch (2026-11-26): section 14 defines v2 experiments E2-E8, the protocol, win rule and resource rule.
 
