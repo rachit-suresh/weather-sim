@@ -1,0 +1,5 @@
+# Server runtime. All of these exist in the judge's sandbox; versions there are not known, so keep code version-tolerant.
+numpy>=1.26
+fastapi
+uvicorn
+torch>=2.2        # CPU build is enough: pip install torch --index-url https://download.pytorch.org/whl/cpu

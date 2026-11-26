@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multiverse of Monsoon</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Multiverse of Monsoon <span class="sub">India climate digital twin</span></h1>
+    <div class="conn">
+      <label>Server <input id="server" value="http://127.0.0.1:8000" size="24"></label>
+      <button id="connect">Connect</button>
+      <span id="status" class="status">not connected</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel controls">
+      <h2>Start state</h2>
+      <label>Window <select id="window"></select></label>
+
+      <h2>View</h2>
+      <label>Channel <select id="channel"></select></label>
+      <label>Day <input id="day" type="range" min="0" max="10" value="1"> <span id="dayLabel">+1</span></label>
+      <div class="seg" id="view">
+        <button data-v="base" class="on">Prime</button>
+        <button data-v="shock">Shocked</button>
+        <button data-v="diff">Difference</button>
+      </div>
+
+      <h2>Shock <span class="hint">(drag on the map to pick a box)</span></h2>
+      <div class="seg" id="presets">
+        <button data-p="warm_ocean">Warm Bay of Bengal</button>
+        <button data-p="monsoon_stall">Weak Arabian Sea wind</button>
+        <button data-p="clear">Clear</button>
+      </div>
+      <div id="shocks"></div>
+      <button id="addShock">+ add shock</button>
+      <button id="run" class="primary">Run simulation</button>
+      <p id="timing" class="hint"></p>
+    </section>
+
+    <section class="panel map">
+      <canvas id="map" width="576" height="512"></canvas>
+      <div id="legend"></div>
+      <div id="hover" class="hint"></div>
+    </section>
+
+    <section class="panel impact">
+      <h2>Impact</h2>
+      <div id="impact"><p class="hint">Run a simulation to see impacts.</p></div>
+    </section>
+  </main>
+
+  <script src="impact.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# data never goes in the repo (judge scan: .nc costs points, multi-year arrays are critical)
+*.nc
+*.nc4
+*.grib
+*.grib2
+*.zarr
+/data/
+/cache/
+
+# experiment outputs (leaderboard.csv is shared, per-run json is not)
+runs/*
+!runs/leaderboard.csv
+artifacts/models/smoke_*
+
+# python / env
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.claude/settings.local.json

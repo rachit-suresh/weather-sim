@@ -1,0 +1,10 @@
+# Training + evaluation (not needed by the server)
+-r requirements.txt
+xarray
+netCDF4
+scipy
+pandas
+lightgbm
+pytest
+requests
+# plus the official kit wheel (not on PyPI): pip install monsoon_r1_kit-1.0.0-py3-none-any.whl

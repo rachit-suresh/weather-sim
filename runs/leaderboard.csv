@@ -1,0 +1,5 @@
+time,tag,model,split,auto_events_of_70,auto_random_of_70,gate,ss_events,ss_random,csi_skill_events,csi_skill_random,blur_pts_events,blur_pts_random,causal_pts,ms_per_rollout
+2026-11-26T14:44:52,baseline,persistence,val,21.25,19.58,False,-0.2065,-0.1859,-0.0425,-0.0472,10.0,8.33,11.25,0.2
+2026-11-26T14:44:54,baseline,climatology,val,9.7,10.0,False,-0.0126,-0.0362,-0.0552,-0.088,9.7,10.0,0.0,0.2
+2026-11-26T14:44:56,baseline,damped_anomaly,val,43.73,42.34,True,0.0865,0.0841,0.0077,0.0004,9.71,10.0,11.25,0.2
+2026-11-26T14:46:57,smoke,cnn:smoke_cnn,val,51.97,57.1,True,0.1043,0.109,0.0234,0.0498,10.0,10.0,12.38,22.8
