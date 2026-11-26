@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.13 (2026-11-27). **Status:** active.
+**Version:** 1.14 (2026-11-27). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -161,6 +161,20 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   (g) "Weather focus" slider w in [0, 1] (default 0): the art is faded toward paper by up to 60% and the forecast tint
   opacity moves from the storybook value to 0.85 for every cell, so a demo can dull the background and show the weather;
   the coast and India border are inked over the forecast (fading in with w) so the geography stays readable.
+  (h) geography of the art map (1.14, replaces the "traced from the model's land/sea mask" part of (a)): coastline
+  and islands (Andaman & Nicobar, Lakshadweep, Sri Lanka) come from hand-entered lat/lon outlines at about 0.2 deg,
+  India vs neighbour from India's official outline (whole of Jammu & Kashmir and Ladakh, as on Survey of India maps);
+  biome edges are noise-warped so no straight 1-deg lines show. Only the picture changes: forecast cells, masks used for
+  metrics, and the API are untouched.
+- `IMP-4` Uncluttered layout (1.14): on load the page shows only the slim header, the map and a one-line day slider.
+  (a) Shocks live in a left drawer opened by a "Shocks" button: judge shocks first, "More presets" and "Paint your own"
+  folded; the queued shocks and the BRANCH TIMELINE button stay at the drawer bottom, and a floating BRANCH button
+  appears on the map when shocks are queued; (b) results live in a right drawer opened by an "Impact" button (it shows a
+  dot when a new branch is ready; clicking a cell opens it on the cell inspector); (c) the six variable buttons become
+  one dropdown with plain names; display settings (wind, cities, storybook, weather focus, focus region) move to a
+  "View" dropdown; (d) the daily chart is folded under the slider; (e) a "?" button opens a short how-it-works modal;
+  (f) scenario labels are plain ("Monsoon onset, 13 May 2020"); run id and latency move into the model badge tooltip;
+  (g) view names stay Prime / Branched / Diff (team choice); every existing feature stays reachable.
 ## 12. Plan (updated in 1.1)
 
 - **Run 2 (now):** families CNN, U-Net, CNN+transformer hybrid, physics hybrid, ConvGRU with `REP-*`, `ROL-1..2`,
@@ -216,6 +230,9 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.4 (2026-11-26): D4 + edge relax screening added; r3_unet reuses p2_unet_d4st (identical run).
 - 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
 - 1.6 (2026-11-26): D4 + edge relax wins the screening; run 3b adds it to the other 4 families.
+- 1.14 (2026-11-27): spec error in `IMP-3a`: a 1-deg mask cannot draw real coasts (no Andaman Islands, fake land in
+  the Andaman Sea next to Port Blair, India cut off in Kashmir, square biome patches near Jharkhand); new `IMP-3h`
+  (art geography from lat/lon outlines). New `IMP-4` uncluttered layout (team request).
 - 1.13 (2026-11-27): `IMP-3` art style v2 (pixel-art India map, 5x globe focus, storybook overlay), team-approved plan.
   Amended on the branch: `IMP-3f` faint cell grid, `IMP-3g` weather-focus slider (team request).
 - 1.12 (2026-11-27): final release plan approved: `VAL-4` made concrete (all years, last epoch, acceptance checks);

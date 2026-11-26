@@ -1,9 +1,18 @@
 import { useState } from "react";
-import { Activity, Radio, Satellite, Cpu, Settings2, Check, X } from "lucide-react";
+import { Satellite, Cpu, Settings2, Check, X, HelpCircle } from "lucide-react";
 import GlitchText from "@/components/kokonutui/glitch-text";
 import type { Multiverse } from "@/state/useMultiverse";
 
-export default function HeaderBar({ m }: { m: Multiverse }) {
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** spec IMP-4f: "monsoon_onset (input ends 20200513)" -> "Monsoon onset, 13 May 2020" */
+function prettyWindow(name: string, label: string): string {
+  const words = name.replace(/_/g, " ").trim();
+  const nice = words.charAt(0).toUpperCase() + words.slice(1);
+  const d = /(\d{4})(\d{2})(\d{2})/.exec(label);
+  return d ? `${nice}, ${Number(d[3])} ${MONTHS[Number(d[2]) - 1]} ${d[1]}` : nice;
+}
+
+export default function HeaderBar({ m, onHelp }: { m: Multiverse; onHelp: () => void }) {
   const [urlOpen, setUrlOpen] = useState(false);
   const [draftUrl, setDraftUrl] = useState(m.backendUrl);
 
@@ -27,8 +36,8 @@ export default function HeaderBar({ m }: { m: Multiverse }) {
             accent="#c53d2e"
             className="font-pixel text-[13px] text-ink sm:text-[15px]"
           />
-          <div className="mt-1 hidden font-mono text-[9px] text-ink-faint sm:block">
-            INDIA 32×36 · 1° CELLS · {m.steps}-DAY BRANCH ROLLOUT
+          <div className="mt-1 hidden font-mono text-[9px] text-ink-faint lg:block">
+            WHAT-IF WEATHER FOR INDIA · {m.steps}-DAY FORECAST
           </div>
         </div>
       </div>
@@ -40,7 +49,9 @@ export default function HeaderBar({ m }: { m: Multiverse }) {
           m.online ? "border-safe/60 bg-safe/10 text-ink" : "border-danger/60 bg-danger/10 text-danger"
         }`}
         title={m.online
-          ? `Live model reported by /health: ${m.modelName} (${m.backendUrl || "same-origin proxy"})`
+          ? `Live model reported by /health: ${m.modelName} (${m.backendUrl || "same-origin proxy"})` +
+            (m.timeline ? `
+Run ${m.timeline.runId} · latency ${m.timeline.latencyMs.toFixed(0)} ms (server ${m.timeline.inferenceMs.toFixed(0)} ms)` : "")
           : `Backend offline (${m.backendUrl || "same-origin proxy"})`}
         aria-label={m.online ? `Backend online, model ${m.modelName}` : "Backend offline"}
       >
@@ -50,50 +61,41 @@ export default function HeaderBar({ m }: { m: Multiverse }) {
       </span>
 
       {m.windows.length > 0 && (
-        <div className="hidden items-center gap-1.5 lg:flex">
+        <div className="hidden items-center gap-1.5 sm:flex">
           <select
             value={m.windowIdx}
             onChange={(e) => m.setWindowIdx(Number(e.target.value))}
             aria-label="Historical input window"
-            className="max-w-[175px] border border-grid-line bg-panel px-1.5 py-1 font-mono text-[9px] text-ink outline-none focus:border-prime/60"
+            title="Start date of the forecast (real weather up to this day)"
+            className="max-w-[150px] md:max-w-[210px] border border-grid-line bg-panel px-1.5 py-1 font-mono text-[9px] text-ink outline-none focus:border-prime/60"
           >
             {m.windows.map((w, idx) => (
-              <option key={w.name} value={idx}>{w.label}</option>
+              <option key={w.name} value={idx}>{prettyWindow(w.name, w.label)}</option>
             ))}
           </select>
           <select
             value={m.steps}
             onChange={(e) => m.setSteps(Number(e.target.value))}
             aria-label="Simulation steps"
+            title="Forecast length in days"
             className="border border-grid-line bg-panel px-1.5 py-1 font-mono text-[9px] text-ink outline-none focus:border-prime/60"
           >
             {Array.from({ length: m.maxSteps }, (_, k) => k + 1).map((d) => (
-              <option key={d} value={d}>{d}d</option>
+              <option key={d} value={d}>{d} days</option>
             ))}
           </select>
         </div>
       )}
 
       <div className="ml-auto flex items-center gap-3 sm:gap-4">
-        {m.timeline && (
-          <div className="hidden text-right font-mono text-[9px] leading-tight text-ink-faint lg:block">
-            <div>RUN <span className="text-ink-dim">{m.timeline.runId}</span> · <span className="text-ink-dim">{m.modelName}</span></div>
-            <div>
-              LATENCY <span className="text-prime">{m.timeline.latencyMs.toFixed(0)} ms</span>
-              <span className="ml-1">(srv {m.timeline.inferenceMs.toFixed(0)})</span>
-            </div>
-          </div>
-        )}
-
         <div className="relative">
           <button
             onClick={() => { setDraftUrl(m.backendUrl); setUrlOpen((o) => !o); }}
-            className="hidden items-center gap-1.5 font-mono text-[9px] text-ink-faint hover:text-ink sm:flex"
-            title={`Backend: ${m.backendUrl || "same-origin proxy"} (${m.modelName})`}
+            className="grid size-7 place-items-center border border-grid-line bg-abyss text-ink-faint hover:text-ink"
+            title={`Server settings (backend: ${m.backendUrl || "same-origin proxy"})`}
+            aria-label={`Backend: ${m.backendUrl || "same-origin proxy"} (${m.modelName})`}
           >
-            <Activity size={11} className={m.online ? "text-safe" : "text-danger"} />
-            {m.online ? "LINKED" : "OFFLINE"}
-            <Settings2 size={10} />
+            <Settings2 size={12} />
           </button>
 
           {urlOpen && (
@@ -132,16 +134,13 @@ export default function HeaderBar({ m }: { m: Multiverse }) {
           )}
         </div>
 
-        <div
-          className={`flex items-center gap-1.5 border px-2 py-1 font-pixel text-[8px] ${
-            m.diverged
-              ? "border-branch/50 bg-branch/10 text-branch"
-              : "border-prime/40 bg-prime/10 text-prime"
-          }`}
+        <button
+          onClick={onHelp}
+          className="flex h-7 items-center gap-1.5 border border-prime/50 bg-prime/10 px-2 font-pixel text-[8px] text-prime hover:bg-prime/20"
+          aria-label="How it works"
         >
-          <Radio size={10} className={m.running ? "mm-pulse" : ""} />
-          {m.running ? "SIMULATING" : m.diverged ? "BRANCHED" : "PRIME"}
-        </div>
+          <HelpCircle size={12} /> <span className="hidden sm:inline">HOW IT WORKS</span>
+        </button>
       </div>
     </header>
   );

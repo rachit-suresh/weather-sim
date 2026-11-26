@@ -87,6 +87,8 @@ export default function ImpactRail({ m }: { m: Multiverse }) {
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
+      {/* spec IMP-4b: a clicked cell opens this drawer, so its inspector comes first */}
+      <CellInspector m={m} />
       <SectionTitle
         right={
           <ToggleChip
@@ -259,7 +261,13 @@ export default function ImpactRail({ m }: { m: Multiverse }) {
       )}
 
       {/* ── raw-field divergence ── */}
-      {!lens && rawStats && t && (
+      {!lens && t && !m.diverged && (
+        <p className="mx-3 mt-3 border border-dashed border-grid-line px-2.5 py-2 text-[10px] leading-relaxed text-ink-dim">
+          Nothing to compare yet. Open <span className="font-pixel text-[8px] text-shock">SHOCKS</span>, pick one and press{" "}
+          <span className="font-pixel text-[8px] text-shock">BRANCH TIMELINE</span>; how far the branch drifts from Prime shows up here.
+        </p>
+      )}
+      {!lens && rawStats && t && m.diverged && (
         <div className="px-3 pt-3">
           <div className="border border-grid-line bg-abyss/70 px-2.5 py-2">
             <div className="font-pixel text-[8px] text-ink-faint">BRANCH DIVERGENCE · {m.variable.toUpperCase()}</div>
@@ -307,7 +315,6 @@ export default function ImpactRail({ m }: { m: Multiverse }) {
         </div>
       )}
 
-      <CellInspector m={m} />
       <div className="h-4 shrink-0" />
     </div>
   );

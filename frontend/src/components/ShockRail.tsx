@@ -2,13 +2,13 @@ import { useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Paintbrush, Eraser, Thermometer, CloudRain, Droplets, Wind, Gauge,
-  GitBranch, Trash2, Waves, MapPin, Crosshair, Sparkles,
+  GitBranch, Trash2, Crosshair,
 } from "lucide-react";
 import LiquidSlider from "@/components/kokonutui/liquid-slider";
 import DetentDial from "@/components/kokonutui/detent-dial";
 import HoldButton from "@/components/kokonutui/hold-button";
 import { SectionTitle, ToggleChip } from "@/components/ui";
-import { VAR_META, VAR_KEYS, GRID, displayUnit, type VarKey } from "@/lib/grid";
+import { VAR_META, VAR_KEYS, displayUnit, type VarKey } from "@/lib/grid";
 import { JUDGE_PRESETS, MAX_PERTURBATIONS, PRESETS, type Multiverse } from "@/state/useMultiverse";
 
 const VAR_ICONS: Record<VarKey, typeof Wind> = {
@@ -38,17 +38,82 @@ export default function ShockRail({ m }: { m: Multiverse }) {
   }, [m.painted, m.queue]);
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto">
-      {/* ── painter ── */}
-      <SectionTitle
-        right={
-          <ToggleChip active={m.paintMode} onClick={() => m.setPaintMode(!m.paintMode)} icon={Paintbrush} accent="var(--color-shock)">
-            {m.paintMode ? "PAINTING" : "PAINT"}
-          </ToggleChip>
-        }
-      >
-        SHOCK PAINTER
-      </SectionTitle>
+    <div className="flex h-full flex-col">
+      {/* spec IMP-4a: pick (judge shocks first) -> queue -> branch; presets and the brush are folded */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* ── official judge shocks ── */}
+      <SectionTitle>1 · PICK A SHOCK</SectionTitle>
+      <p className="px-3 pb-1.5 text-[10px] leading-snug text-ink-faint">The judges' test shocks. Click to queue, click again to remove.</p>
+      <div className="space-y-1 px-3 pb-2">
+        {JUDGE_PRESETS.map((p) => {
+          const armed = m.queue.some((q) => q.group === p.id);
+          return (
+            <button
+              key={p.id}
+              onClick={() => (armed ? m.removeJudgePreset(p.id) : m.addJudgePreset(p))}
+              className={`group w-full border px-2 py-1.5 text-left transition-all ${
+                armed
+                  ? "border-shock/60 bg-shock/10 glow-shock"
+                  : "border-grid-line bg-abyss/60 hover:border-shock/40"
+              }`}
+              title={p.blurb}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className={`truncate font-pixel text-[8px] ${armed ? "text-shock" : "text-ink-dim group-hover:text-ink"}`}>
+                  {p.label}
+                </span>
+                <span className={`shrink-0 font-mono text-[9px] ${armed ? "text-shock" : "text-ink-faint"}`}>
+                  {armed ? "ARMED ✓" : "ARM"}
+                </span>
+              </div>
+              <div className="mt-0.5 truncate font-mono text-[8px] text-ink-faint">{p.blurb}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── presets ── */}
+      <details className="group mx-3 mb-1.5 border border-grid-line bg-abyss/40">
+        <summary className="flex cursor-pointer select-none items-center justify-between px-2 py-1.5 font-pixel text-[8px] text-ink-dim hover:text-ink">
+          MORE PRESETS ({PRESETS.length}) <span className="transition-transform group-open:rotate-90">▸</span>
+        </summary>
+      <div className="space-y-1 px-2 pb-2">
+        {PRESETS.map((p) => {
+          const armed = m.queue.some((q) => q.label === p.label);
+          return (
+            <button
+              key={p.label}
+              onClick={() => (armed ? m.removeShock(m.queue.find((q) => q.label === p.label)!.id) : m.addPreset(p))}
+              className={`group w-full border px-2 py-1.5 text-left transition-all ${
+                armed
+                  ? "border-shock/60 bg-shock/10 glow-shock"
+                  : "border-grid-line bg-abyss/60 hover:border-shock/40"
+              }`}
+              title={p.blurb}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className={`truncate font-pixel text-[8px] ${armed ? "text-shock" : "text-ink-dim group-hover:text-ink"}`}>
+                  {p.label}
+                </span>
+                <span className={`shrink-0 font-mono text-[9px] ${armed ? "text-shock" : "text-ink-faint"}`}>
+                  {armed ? "ARMED ✓" : "ARM"}
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      </details>
+      <details className="group mx-3 mb-2 border border-grid-line bg-abyss/40">
+        <summary className="flex cursor-pointer select-none items-center justify-between px-2 py-1.5 font-pixel text-[8px] text-ink-dim hover:text-ink">
+          <span className="flex items-center gap-1.5"><Paintbrush size={10} /> PAINT YOUR OWN</span> <span className="transition-transform group-open:rotate-90">▸</span>
+        </summary>
+      <div className="flex items-center justify-between gap-2 px-3 pb-1.5">
+        <span className="text-[10px] text-ink-faint">Brush</span>
+        <ToggleChip active={m.paintMode} onClick={() => m.setPaintMode(!m.paintMode)} icon={Paintbrush} accent="var(--color-shock)">
+          {m.paintMode ? "PAINTING" : "PAINT"}
+        </ToggleChip>
+      </div>
 
       <div className="px-3 pb-2">
         <div className="flex items-start justify-between gap-2">
@@ -141,9 +206,11 @@ export default function ShockRail({ m }: { m: Multiverse }) {
         </div>
       </div>
 
-      {/* ── armed shocks + run ── */}
+      </details>
+      </div>
+      <div className="shrink-0 border-t border-grid-line bg-abyss/90">
       <SectionTitle right={<span className="font-mono text-[9px] text-ink-faint">{m.perturbationCount}/{MAX_PERTURBATIONS}</span>}>
-        ARMED SHOCKS
+        2 · QUEUED, THEN BRANCH
       </SectionTitle>
       <div className="px-3 pb-2">
         <AnimatePresence initial={false}>
@@ -152,7 +219,7 @@ export default function ShockRail({ m }: { m: Multiverse }) {
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="border border-dashed border-grid-line px-2 py-2 text-center text-[9px] text-ink-faint"
             >
-              nothing armed — paint or pick a preset
+              nothing queued yet: pick a shock above
             </motion.div>
           )}
           {m.painted && (
@@ -211,114 +278,6 @@ export default function ShockRail({ m }: { m: Multiverse }) {
         </HoldButton>
       </div>
 
-      {/* ── official judge shocks ── */}
-      <SectionTitle>JUDGE SHOCKS</SectionTitle>
-      <div className="space-y-1 px-3 pb-2">
-        {JUDGE_PRESETS.map((p) => {
-          const armed = m.queue.some((q) => q.group === p.id);
-          return (
-            <button
-              key={p.id}
-              onClick={() => (armed ? m.removeJudgePreset(p.id) : m.addJudgePreset(p))}
-              className={`group w-full border px-2 py-1.5 text-left transition-all ${
-                armed
-                  ? "border-shock/60 bg-shock/10 glow-shock"
-                  : "border-grid-line bg-abyss/60 hover:border-shock/40"
-              }`}
-              title={p.blurb}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className={`truncate font-pixel text-[8px] ${armed ? "text-shock" : "text-ink-dim group-hover:text-ink"}`}>
-                  {p.label}
-                </span>
-                <span className={`shrink-0 font-mono text-[9px] ${armed ? "text-shock" : "text-ink-faint"}`}>
-                  {armed ? "ARMED ✓" : "ARM"}
-                </span>
-              </div>
-              <div className="mt-0.5 truncate font-mono text-[8px] text-ink-faint">{p.blurb}</div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ── presets ── */}
-      <SectionTitle>REGION PRESETS</SectionTitle>
-      <div className="space-y-1 px-3 pb-2">
-        {PRESETS.map((p) => {
-          const armed = m.queue.some((q) => q.label === p.label);
-          return (
-            <button
-              key={p.label}
-              onClick={() => (armed ? m.removeShock(m.queue.find((q) => q.label === p.label)!.id) : m.addPreset(p))}
-              className={`group w-full border px-2 py-1.5 text-left transition-all ${
-                armed
-                  ? "border-shock/60 bg-shock/10 glow-shock"
-                  : "border-grid-line bg-abyss/60 hover:border-shock/40"
-              }`}
-              title={p.blurb}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className={`truncate font-pixel text-[8px] ${armed ? "text-shock" : "text-ink-dim group-hover:text-ink"}`}>
-                  {p.label}
-                </span>
-                <span className={`shrink-0 font-mono text-[9px] ${armed ? "text-shock" : "text-ink-faint"}`}>
-                  {armed ? "ARMED ✓" : "ARM"}
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ── display ── */}
-      <SectionTitle>DISPLAY</SectionTitle>
-      <div className="px-3 pb-4">
-        <div className="flex flex-wrap gap-1">
-          <ToggleChip active={m.showWind} onClick={() => m.setShowWind(!m.showWind)} icon={Wind}>WIND</ToggleChip>
-          <ToggleChip active={m.showCities} onClick={() => m.setShowCities(!m.showCities)} icon={MapPin}>CITIES</ToggleChip>
-          {/* spec IMP-3d: on = Storybook (pixel-art map + forecast tint), off = Data (full colour field) */}
-          <span title={m.showScenery ? "Storybook: pixel-art map with the forecast as a tint. Click for Data mode (full colour field)." : "Data mode: full colour field. Click for the Storybook pixel-art map."}>
-            <ToggleChip active={m.showScenery} onClick={() => m.setShowScenery(!m.showScenery)} icon={Sparkles} accent="var(--color-safe)">STORYBOOK</ToggleChip>
-          </span>
-        </div>
-        {/* spec IMP-3g: dull the art map and bring the forecast colours to full strength */}
-        <label
-          className={`mt-2 block ${m.showScenery ? "" : "opacity-40"}`}
-          title="Fade the map art and show the forecast colours at full strength. Works in Storybook mode."
-        >
-          <span className="flex items-center justify-between font-pixel text-[8px] text-ink-faint">
-            <span>WEATHER FOCUS</span>
-            <span className="font-mono text-[10px] text-ink">{Math.round(m.weatherFocus * 100)}%</span>
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={m.weatherFocus}
-            disabled={!m.showScenery}
-            onChange={(e) => m.setWeatherFocus(Number(e.target.value))}
-            aria-label="Weather focus"
-            className="mt-1 w-full cursor-pointer accent-[var(--color-prime)] disabled:cursor-not-allowed"
-          />
-        </label>
-        <label className="mt-2 block">
-          <span className="font-pixel text-[8px] text-ink-faint">FOCUS REGION</span>
-          <select
-            value={m.focusRegion ?? ""}
-            onChange={(e) => m.setFocusRegion(e.target.value || null)}
-            className="mt-1 w-full border border-grid-line bg-abyss px-2 py-1.5 font-mono text-[10px] text-ink outline-none focus:border-prime/60"
-          >
-            <option value="">All India</option>
-            {GRID.regions.map((r) => (
-              <option key={r.name} value={r.name}>{r.name}</option>
-            ))}
-          </select>
-        </label>
-        <div className="mt-2 flex items-center gap-1.5 text-[9px] text-ink-faint">
-          <Waves size={10} className="text-prime" />
-          Shocks evolve freely after day 0 — watch the ripple.
-        </div>
       </div>
     </div>
   );

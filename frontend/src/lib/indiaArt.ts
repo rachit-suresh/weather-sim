@@ -1,14 +1,15 @@
 /* ════════════════════════════════════════════════════════════════════════════
    India art map (spec IMP-3a) — a storybook pixel-art terrain raster of the
    forecast grid, generated once in the browser (no assets, works offline).
+   Coast, islands and India's outline come from lat/lon outlines in indiaGeo.ts (spec IMP-3h).
 
    Extent = the 32 x 36 forecast grid: lat 6..38 N, lon 65..101 E, at ART_P art
-   pixels per degree, north up. Land/sea and India/neighbour come from the
-   model's own masks (interpolated + a little noise), so the art lines up with
-   the forecast cells. Elevation drives mountains; ranges and rivers are drawn
-   from hand-placed lat/lon polylines (static geography).
+   pixels per degree, north up. Elevation (from the grid, read through noise-
+   warped coordinates so no 1-deg edges show) drives the biomes and mountains;
+   ranges and rivers are drawn from hand-placed lat/lon polylines.
    ════════════════════════════════════════════════════════════════════════════ */
 import { GRID, NC, NR } from "@/lib/grid";
+import { geoKind } from "@/lib/indiaGeo";
 
 export const ART_P = 10;                       // art pixels per degree
 export const ART_W = NC * ART_P;               // 360
@@ -152,25 +153,28 @@ export function getIndiaArt(): IndiaArt {
     for (let x = 0; x < W; x++) {
       const lon = ART_LON0 + (x + 0.5) / ART_P;
       const i = y * W + x;
-      const n = valueNoise(x, y, 5) - 0.5, n2 = valueNoise(x + 999, y + 333, 3) - 0.5;
-      const land = bilinear((r, c) => GRID.land_sea_mask[r][c], lat, lon) + 0.16 * n + 0.06 * n2;
-      if (land < 0.5) { kind[i] = 0; continue; }
-      const ind = bilinear((r, c) => (GRID.mask[r][c] === 2 ? 1 : 0), lat, lon) + 0.22 * n;
-      const ln = bilinear((r, c) => (GRID.mask[r][c] === 1 ? 1 : 0), lat, lon);
-      kind[i] = ind > 0.5 || (ln < 0.25 && ind > 0.2) ? 2 : 1;
-      const elev = (la: number, lo: number) => bilinear((r, c) => GRID.elevation[r][c], la, lo);
-      const e = Math.max(0, elev(lat, lon) + 0.06 * n2);
+      const n2 = valueNoise(x + 999, y + 333, 3) - 0.5;
+      // spec IMP-3h: land/sea and India/neighbour from hand-entered lat/lon outlines, not the 1-deg mask
+      const k = geoKind(lat, lon);
+      if (k === 0) { kind[i] = 0; continue; }
+      kind[i] = k;
+      // biome rules read noise-warped coordinates so their edges wander instead of following 1-deg lines
+      // (large swirl + medium wobble + per-pixel dither, so zone edges look hand-drawn, not ruled)
+      const la = lat + 2.0 * (valueNoise(x + 500, y + 100, 30) - 0.5) + 0.7 * (valueNoise(x + 71, y + 13, 9) - 0.5) + 0.35 * (rand(x, y) - 0.5);
+      const lo = lon + 2.0 * (valueNoise(x + 200, y + 800, 30) - 0.5) + 0.7 * (valueNoise(x + 19, y + 57, 9) - 0.5) + 0.35 * (rand(y + 7, x) - 0.5);
+      const elev = (a: number, b: number) => bilinear((r, c) => GRID.elevation[r][c], a, b);
+      const e = Math.max(0, elev(la, lo) + 0.06 * n2);
       // steepness (per degree): mountain sprites belong on steep walls (Himalaya), not on flat high plateaus (Tibet)
-      const slope = Math.hypot(elev(lat + 0.6, lon) - elev(lat - 0.6, lon), elev(lat, lon + 0.6) - elev(lat, lon - 0.6)) / 1.2;
+      const slope = Math.hypot(elev(la + 0.6, lo) - elev(la - 0.6, lo), elev(la, lo + 0.6) - elev(la, lo - 0.6)) / 1.2;
       elevAt[i] = e;
       let b = 1;
       if (e >= 0.5) b = slope > 0.07 || (kind[i] === 2 && e < 0.8) ? 6 : 8;
-      else if (lat >= 24 && lat <= 30.6 && lon >= 69 && lon <= 75.6 && e < 0.22) b = 7;
+      else if (la >= 24 && la <= 30.6 && lo >= 69 && lo <= 75.6 && e < 0.22) b = 7;
       else if (e >= 0.3) b = 5;
-      else if ((lat > 21.5 && lon > 89.3) || (lat < 21 && distToPolyline(lat, lon, RANGES[0].pts) < 1.0)
-        || (lat >= 18 && lat <= 24.5 && lon >= 79 && lon <= 86.5 && e >= 0.1) || (lat > 27 && e >= 0.16)) b = 4;
-      else if (lat >= 24 && lat <= 30.8 && lon >= 75.6 && lon <= 88.8 && e < 0.14) b = 2;
-      else if (lat >= 13 && lat < 21 && lon >= 74.5 && lon <= 80.5 && e >= 0.1) b = 3;
+      else if ((la > 21.5 && lo > 89.3) || (la < 21 && distToPolyline(la, lo, RANGES[0].pts) < 1.0)
+        || (la >= 18 && la <= 24.5 && lo >= 79 && lo <= 86.5 && e >= 0.1) || (la > 27 && e >= 0.16)) b = 4;
+      else if (la >= 24 && la <= 30.8 && lo >= 75.6 && lo <= 88.8 && e < 0.14) b = 2;
+      else if (la >= 13 && la < 21 && lo >= 74.5 && lo <= 80.5 && e >= 0.1) b = 3;
       biome[i] = b;
     }
   }
@@ -253,6 +257,8 @@ export function getIndiaArt(): IndiaArt {
   const add = (name: keyof typeof SPR, x: number, y: number) => {
     if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1) return;
     const i = y * W + x; if (kind[i] === 0) return;
+    // no sprites on tiny islands (Lakshadweep, Nicobar): they would just read as clutter
+    if (kind[Math.max(0, i - 4)] === 0 || kind[Math.min(W * H - 1, i + 4)] === 0 || kind[Math.max(0, i - 4 * W)] === 0 || kind[Math.min(W * H - 1, i + 4 * W)] === 0) return;
     sprites.push({ name, x, y, dim: kind[i] === 1 });
   };
   for (let y = 2; y < H; y += 3) for (let x = 2; x < W; x += 3) {

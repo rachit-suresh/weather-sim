@@ -55,6 +55,8 @@ interface Props {
   running: boolean;
   focusRegion: string | null;
   onSwitchToFlatMap: () => void;
+  /** spec IMP-4: the floating station card is off by default (hovering a city shows the same numbers) */
+  stationCard?: boolean;
 }
 
 const DEG = Math.PI / 180;
@@ -135,7 +137,7 @@ export default function GlobeView(props: Props) {
   const {
     timeline, landSeaMask, view, variable, day, lens, lensOut, paintMask, paintMode, brushRadius,
     onPaint, onPaintEnd, selected, onSelect, ripples, showWind, showCities, running, focusRegion,
-    onSwitchToFlatMap,
+    onSwitchToFlatMap, stationCard = false,
   } = props;
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -1557,7 +1559,7 @@ export default function GlobeView(props: Props) {
       </div>
 
       {/* ── Radio Garden live city station tuner card (bottom-right) ── */}
-      {showCities && (
+      {showCities && stationCard && (
         <div className="pointer-events-auto absolute bottom-2 right-2 z-20 w-[212px] panel px-2.5 py-2 sm:w-[244px]">
           <div className="flex items-center justify-between gap-1.5">
             <span className="flex items-center gap-1.5 font-pixel text-[8px] text-safe">
