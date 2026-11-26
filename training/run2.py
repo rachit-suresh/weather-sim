@@ -6,7 +6,7 @@
 Stages already present in the leaderboard are skipped.
 
     python -m training.run2 --family cnn --threads 3
-    python -m training.run2 --family unet --prefix p2 --suffix edge --options "--edge-relax"     (phase 2 screening)
+    python -m training.run2 --family unet --prefix p2 --suffix edge --options=--edge-relax    (use "=": the value starts with --)
 """
 from __future__ import annotations
 

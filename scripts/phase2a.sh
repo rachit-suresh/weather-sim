@@ -5,7 +5,7 @@ set -u
 PY=${1:-python}; THREADS=${2:-4}
 cd "$(dirname "$0")/.."
 mkdir -p runs/logs
-run() { $PY -m training.run2 --family unet --prefix p2 --suffix "$1" --threads "$THREADS" --options "$2" >> "runs/logs/p2_unet_$1.log" 2>&1; echo "done $1 (exit $?)"; }
+run() { $PY -m training.run2 --family unet --prefix p2 --suffix "$1" --threads "$THREADS" --options="$2" >> "runs/logs/p2_unet_$1.log" 2>&1; echo "done $1 (exit $?)"; }
 run edge "--edge-relax" &
 run ll "--latlon" &
 run d4 "--rain-head two_part" &
