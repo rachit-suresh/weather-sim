@@ -1,5 +1,22 @@
 # v2 experiments E2-E8: results summary
 
+## Morning TL;DR (2026-11-27 ~09:00)
+
+- Nothing from v2 is on `main`; serving any v2 model is the user's decision (one-line `artifacts/active.json` change).
+- **Ready candidate: cyclone mode A, all-data** (`v2/cyclone-mode` c2e480a, `artifacts/cyclone_a_all.json` = `final_cnn` +
+  `v2_e7c_all` mover, pressure/winds only, inside a moving circle when the 3 input days already hold a deep sea low).
+  Judge scores identical to `final_cnn` (67.63 / 68.88, shocks 12.75 / 13.88); Fani 247/104/232 km (final_cnn 247/312/322),
+  Amphan landfall exact; worst rollout 164 ms on 4 threads; fresh no-LFS clone loads it. Gain is physical, not points
+  (points are capped). Do NOT merge the branch wholesale (its `active.json` points at r3_cnn); serve per `RESULTS_CYC.md`.
+- **Round F (one-change fine-tunes from r3_cnn):** F0 control, F1 cyclone and F2 heavy-rain oversampling, F4 unroll
+  noise, F5 10-day unroll all lose; the control itself loses (more training over-fits). **F3 rain-only warm_ocean guard
+  passes narrowly** (val 68.16, test 67.77, shocks 13.50 / 13.12; warm_ocean worst case 3.93 / 6.59 vs 4.60 / 8.24).
+  Seeds 1-2 and an all-data `v2_f3_all` are training on `v2/f-guard`; not yet confirmed.
+- **Finding:** the served v1.1 `final_cnn` is less stable on warm_ocean than `r3_cnn` (fails "stable" 3/5 on 2018-19).
+  F3's guard targets exactly this.
+- Branches: `v2/research` (spec, this file), `v2/e2-softcsi` .. `v2/e8-crps`, `v2/cyclone-mode`, `v2/f-sample`,
+  `v2/f-guard`, `v2/f-growth`.
+
 Date: 2026-11-27. Spec: `docs/SPEC.md` section 14 (`V2-P`, `V2-WIN`, `V2-E2`..`V2-E8`).
 Data: only the provided `india_climate_train.nc` (`CON-6`). Train 2005-2017, choose on 2018-19 (val), check on 2020-21 (test).
 Each experiment ran in its own worktree and branch, one seed, CPU only. Full write-ups: `docs/v2/RESULTS_E*.md` on each branch.
