@@ -27,7 +27,8 @@ from twin.models.neural import NeuralModel           # noqa: E402
 DOY = 300.0
 SINCOS = [float(np.sin(2 * np.pi * DOY / 365)), float(np.cos(2 * np.pi * DOY / 365))]
 _env = os.environ.get("TWIN_MODEL_SPEC")
-_given = json.loads(Path(_env).read_text()) if _env else {}
+_active = Path(__file__).resolve().parents[1] / "artifacts" / "active.json"
+_given = json.loads(Path(_env).read_text()) if _env else (json.loads(_active.read_text()) if _active.exists() else {})
 SPEC = _given if _given.get("model") == "cyclone_mode" else {"model": "cyclone_mode", "base": "models/r3_cnn.pt",
                                                               "mover": "models/v2_e7c.pt"}
 BASE, MOVER = SPEC["base"], SPEC["mover"]
