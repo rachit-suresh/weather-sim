@@ -17,6 +17,7 @@ FAMILIES = {
     "vit": ("attention", "WindowViT"),              # 7b pure window transformer on 2x2 patches
     "fno": ("fno", "FNO"),                          # 8  Fourier neural operator (control: global mixing)
     "physics": ("physics", "AdvectionHybrid"),      # 10 learned advection + sources
+    "advcnn": ("advcnn", "AdvectCorrectNet"),       # 11 v2 E7: advect + correct inside each step
 }
 
 
