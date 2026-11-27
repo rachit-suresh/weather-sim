@@ -25,7 +25,7 @@ TEAM = "Team Sage"
 REPO = "github.com/rachit-suresh/weather-sim"
 
 INK, MUTED, ACCENT, RULE = colors.HexColor("#14202b"), colors.HexColor("#5b6773"), colors.HexColor("#1d6fb8"), colors.HexColor("#c9d2da")
-body = ParagraphStyle("b", fontName="Helvetica", fontSize=8.3, leading=10.7, textColor=INK, spaceAfter=2.6)
+body = ParagraphStyle("b", fontName="Helvetica", fontSize=8.0, leading=10.2, textColor=INK, spaceAfter=2.6)
 small = ParagraphStyle("s", parent=body, fontSize=7.6, leading=9.4, textColor=MUTED)
 h1 = ParagraphStyle("h1", fontName="Helvetica-Bold", fontSize=19, leading=22, textColor=INK)
 sub = ParagraphStyle("sub", parent=body, fontSize=8.4, leading=10.6, textColor=MUTED, spaceAfter=5)
@@ -240,7 +240,17 @@ def build(out: Path, version: str):
                              "(10) + shock behaviour (15), with <font face='Courier'>monsoon_r1.scoring</font> on 72 windows "
                              "(extreme events, ordinary days, named cyclones and floods).", small)]))
 
-    s.append(P("Known limits", h2))
+    s.append(P("Drift, blur and what we rejected", h2))
+    s += B(["<b>Drift.</b> Unroll training on the model's own forecasts, anomaly space (fading to normal = anomaly to 0), per-step "
+            "clamp at 12 std, physical clamps on output, damped-persistence fallback if the network ever fails.",
+            "<b>Blur.</b> Spread + FFT-amplitude losses, sqrt rain, 3x heavy-rain weight, hard rain gate; day-8 variance 74-100% of real.",
+            "<b>Tried and rejected (measured with the judge's code):</b> rain quantile mapping (-6 to -17 on ordinary days), blending "
+            "to persistence, variance rescaling, U-Net/ConvGRU/hybrid/physics ensembles (shock score drops), soft-CSI loss, "
+            "spectral AMSE loss, gamma rain likelihood, zero-padded edges with crops, CRPS noise ensembles, cyclone and heavy-rain "
+            "oversampling, input-noise and 10-day unrolls: each lost points on held-out years (full log in "
+            "<font face='Courier'>docs/v2/</font>)."])
+
+    s.append(P("Failure modes and limits", h2))
     s += B(["<b>Inland monsoon response.</b> The weak-Arabian-jet shock dries the west coast correctly but does not spread far "
             "inland (\"propagates\" check fails in about 4 of 5 windows; the box touches the grid edge).",
             "<b>Resolution and edges.</b> 1-degree cells make a cyclone 2-5 cells wide, so peak winds are underestimated" +
