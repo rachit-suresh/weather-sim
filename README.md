@@ -11,8 +11,9 @@ pip install -r requirements.txt        # torch (CPU), numpy, fastapi, uvicorn - 
 python serve.py --port 8000            # listens on 0.0.0.0; ready in about 3 s
 ```
 
-- `POST /health` -> `{"status": "ready", "model_name": "cnn:final_cnn"}`; `POST /simulate` follows `API_CONTRACT.md`
-  (physical units, nested JSON lists). A 10-day forecast takes about 40-100 ms on 4 CPU cores.
+- `POST /health` -> `{"status": "ready", "model_name": "cyclone_mode_A:v2_f3_all+v2_e7c_all"}`; `POST /simulate`
+  follows `API_CONTRACT.md` (physical units, nested JSON lists). A 10-day forecast takes about 40-100 ms on 4 CPU
+  cores, up to about 0.2 s when cyclone mode is active.
 - Everything the server needs is in this repo as plain files (no Git LFS, nothing downloaded): weights in
   `artifacts/models/`, climatology and static maps in `artifacts/climatology.npz`.
 - The served model is chosen in `artifacts/active.json`. If it ever fails to load or forecast, a damped-persistence
@@ -34,9 +35,20 @@ wind and solar). Server contract for the frontend: `docs/DASHBOARD_API.md`.
 
 ## 3. The submitted model
 
-`artifacts/models/final_cnn.pt`: a local residual CNN (7 layers of 3x3 convolutions, 239k weights) that predicts the
-next day's change in anomaly, with a two-part rain head ("does it rain?" + "how much?"), trained on **all
-2005-2021 data**. How it works: `docs/HOW_THE_MODELS_WORK.md`.
+v1.2 (`artifacts/active.json`, spec `REL-2`) serves two networks, both trained on **all 2005-2021 data**:
+
+- **Base, everywhere: `artifacts/models/v2_f3_all.pt`.** A local residual CNN (7 layers of 3x3 convolutions, 239k
+  weights) that predicts the next day's change in anomaly, with a two-part rain head ("does it rain?" + "how much?").
+  It is the v1.1 model (`final_cnn.pt`) fine-tuned with a rain stability guard: during training a warm Bay of Bengal
+  shock is applied, and rain responses above 3.5 of the judge's 5-std "stable" limit are penalised. v1.1 failed that
+  check in 3 of 5 windows on 2018-19.
+- **Cyclone mode, only near a cyclone: `artifacts/models/v2_e7c_all.pt`.** When the 3 input days (before any shock)
+  already contain a deep low over the Bay of Bengal or Arabian Sea (about 2-3% of days), an advect-and-correct network
+  that moves the weather with a learned wind field supplies pressure and winds inside a circle that follows the
+  storm. Rain, temperature and water vapour still come from the base. On every other day the output is exactly the
+  base model's. Fani 2019: day-2/3 centre error 104/232 km vs 312/322 km; Amphan 2020 landfall latitude exact.
+
+How it works: `docs/HOW_THE_MODELS_WORK.md`; v2 experiments and acceptance: `docs/v2/` (branches `v2/*`).
 
 The recipe was chosen by measurement before this final retrain: 30+ models from 9 families were trained on
 2005-2017, compared on 2018-19 and checked on untouched 2020-21, all scored with the organisers' own scoring code
@@ -58,8 +70,9 @@ python -m training.train_nn --family cnn --name final_cnn --rain-head two_part \
 
 The other defaults of `train_nn` are the recipe in `docs/SPEC.md`: square-root rain, 3x weight on cells above
 10 mm, spread + spectral losses, unroll curriculum 1-2-4-8 days, seed 0. Training saves its full state every epoch,
-so `--resume` continues after an interruption. Then point `artifacts/active.json` at
-`{"model": "neural", "checkpoint": "models/final_cnn.pt"}`.
+so `--resume` continues after an interruption. `{"model": "neural", "checkpoint": "models/final_cnn.pt"}` in
+`artifacts/active.json` serves this v1.1 model alone; the v1.2 fine-tunes (rain guard, cyclone mover) are reproduced
+from the commands in `docs/v2/RESULTS_F3.md` and `docs/v2/RESULTS_CYC.md`.
 
 To reproduce the model-selection runs (train 2005-2017, score on held-out years):
 

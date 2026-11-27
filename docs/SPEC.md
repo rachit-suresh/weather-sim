@@ -213,6 +213,18 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   `SHP-6` CRPS ensemble (E3) on the best family.
 - **Phase 3 (final release v1.1):** `VAL-4` final retrain + acceptance, `RUN-4`, `CON-10` README, brief says the model
   is trained on 2005-2021, final gate on a fresh clone (validator, repo scan 15/15, tests, dashboard live), tag `v1.1`.
+- **Phase 4 (release v1.2, user-approved "if it passes"):** `REL-2` served model = cyclone mode A over the F3 base
+  (`artifacts/active.json` = `{"model": "cyclone_mode", "base": "models/v2_f3_all.pt", "mover":
+  "models/v2_e7c_all.pt", "variant": "A", "threshold_pa": 933.3, "lost_pa": 181.8}`).
+  Base `v2_f3_all` = `final_cnn` fine-tuned on 2005-2021 with a rain-only warm_ocean hinge guard (`SHP-8` on tp only,
+  zero below 3.5 judge std; branch `v2/f-guard`, spec `V2-F3`). Mover `v2_e7c_all` = advect-and-correct network
+  (branch `v2/e7-advect-correct` / `v2/cyclone-mode`, spec `V2-E7c`, `V2-CYC`): used only when the 3 unshocked input
+  days hold a deep sea low (98th percentile, 2005-2021), and only for msl/u10/v10 inside a moving radius-4 mask; rain,
+  t2m and tcwv always come from the base. Zero shock == no shock and the reach limit hold by construction (fixed mask
+  from unshocked states, linear mix). Release only if: the F3 seed rule holds (3 seeds), `v2_f3_all` and the combined
+  model pass `VAL-4`-style acceptance against `final_cnn` (means >= -0.2, shocks not lower), and the fresh-clone gate
+  passes (Python 3.12 sandbox packages, /health names the model, validator, null test, reach <= 11, 14-day request
+  well under 5 s, repo scan 15/15, tests). Otherwise `final_cnn` (v1.1) stays.
 
 ## 13. Known risks
 
@@ -233,6 +245,9 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.4 (2026-11-26): D4 + edge relax screening added; r3_unet reuses p2_unet_d4st (identical run).
 - 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
 - 1.6 (2026-11-26): D4 + edge relax wins the screening; run 3b adds it to the other 4 families.
+- 1.15 (2026-11-27): phase 4 / `REL-2`: v1.2 serves cyclone mode A over the F3 rain-guard base (from the v2 branches;
+  results in `docs/v2/RESULTS_SUMMARY.md` on `v2/research`). Finding behind it: `final_cnn` fails the judge's
+  warm_ocean "stable" check in 3 of 5 windows on 2018-19 (rain overshoot); the F3 guard targets exactly that.
 - 1.14 (2026-11-27): spec error in `IMP-3a`: a 1-deg mask cannot draw real coasts (no Andaman Islands, fake land in
   the Andaman Sea next to Port Blair, India cut off in Kashmir, square biome patches near Jharkhand); new `IMP-3h`
   (art geography from lat/lon outlines). New `IMP-4` uncluttered layout (team request).

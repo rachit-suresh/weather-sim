@@ -166,7 +166,7 @@ def build(out: Path):
             "of the anomaly; the output layer starts at zero, so an untrained model equals persistence.",
             "<b>Rain head.</b> A 7th output is the logit of \"rain > 1 mm\". Rain = amount where the logit > 0, else exactly 0, in both "
             "training and inference (straight-through gradients + cross-entropy loss).",
-            "<b>Rollout.</b> One day per step, 10 steps, 38 ms on 4 CPU cores (limit 5,000 ms). Outputs clamped to physical "
+            "<b>Rollout.</b> One day per step, 10 steps, 38 ms on 4 CPU cores, up to 0.2 s in cyclone mode (limit 5,000 ms). Outputs clamped to physical "
             "ranges; if the model ever fails, a damped-persistence fallback answers so no request is lost."])
 
     s.append(P("2. How we prevent drift and blur", h2))
@@ -188,8 +188,10 @@ def build(out: Path):
             ["Final CNN on <b>untouched 2020-21</b>", "<b>68.1</b>", "<b>67.7</b>", "<b>68.1</b>", "<b>0.11</b>", "<b>13.1</b>"]]
     s.append(Spacer(1, 3))
     s.append(KeepTogether([table(rows, [5.4 * cm, 1.4 * cm, 1.9 * cm, 1.9 * cm, 2.3 * cm, 4.2 * cm], bold_rows=(5, 6)),
-                           P("Submitted weights: the final CNN recipe retrained on all 2005-21 data (more and more recent years; "
-                             "no held-out years remain, so the scores shown are from the 2005-17 version). "
+                           P("Submitted (v1.2): the final CNN retrained on all 2005-21 data, fine-tuned with a rain-only stability guard (warm-Bay "
+                             "rain response kept under 3.5 of the judge's 5-std limit), plus cyclone mode: when the inputs already hold a deep "
+                             "sea low, an advect-and-correct network supplies pressure and winds in a circle that follows the storm (Fani day-3 "
+                             "error 232 vs 322 km). Scores shown are the held-out 2005-17 versions. "
                              "Automatic score out of 70 = error skill 30 + heavy-rain hits 15 + anti-blur 10 + shock behaviour 15, computed with "
                              "the organisers' <font face='Courier'>monsoon_r1.scoring</font>. Named events: Kerala floods 2018, cyclones Titli, "
                              "Gaja, Fani, Vayu, onset and heat 2019 (test: Amphan, Nisarga, Tauktae, Yaas).", small)]))
