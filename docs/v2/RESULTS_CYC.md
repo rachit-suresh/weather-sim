@@ -231,7 +231,7 @@ with the same code, at 4 threads, one at a time. The final_cnn rows match main's
 | same, 2 threads | 37 / 48 / 51 ms | 129 / 179 / **185 ms** | < 1 s | pass |
 | `tests/test_engine.py` and `tests/test_cyclone.py` with `TWIN_MODEL_SPEC=artifacts/cyclone_a_all.json` (plus the defaults) | | ok | pass | pass |
 | repo scan | | 15/15 | 15/15 | pass |
-| fresh clone, plain git (no LFS): spec loads and simulates | | see below | loads | pass |
+| fresh clone, plain git (no LFS): spec loads and simulates | | `git clone --depth 1 -b v2/cyclone-mode` with LFS smudge disabled, no data file: 0 LFS files, both .pt are real torch zips (961,631 / 885,941 bytes); `Engine()` loads `cyclone_mode_A:final_cnn+v2_e7c_all`, the detector fires on a synthetic low, null exact; test_engine + test_cyclone ok | loads | pass |
 
 Logs: `runs/logs/v2_cyc_a_all_*.log`, `runs/logs/final_cnn_*.log`, `runs/logs/v2_cyc_a_all_extra.log` (script
 `runs/cyc_all_extra.py`). Leaderboard tags: `final_cnn_val_cycbranch`, `final_cnn_test_cycbranch`,
