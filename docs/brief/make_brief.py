@@ -290,6 +290,19 @@ def build(out: Path, version: str):
             "<b>Shock brush and presets</b> (judge's warm Bay, monsoon stall, zero shock, plus 5 more), Prime / Branched / Diff views, "
             "globe or flat pixel-art map, India-mean chart; start days from unseen years (onset, heavy rain, heatwave, cyclone, "
             "winter disturbance)."])
+    if new:
+        s.append(P("How we got to this model", h2))
+        s += B(["<b>Step 1, base forecaster (our v1.1).</b> After screening 30+ models we trained the local CNN with the two-part "
+                "rain head and anti-blur losses on all 2005-21 data. It scored well, but two physical faults showed up: "
+                "<b>cyclones stayed where they started</b> (Amphan 2020 centre stuck near 13.5N while the real storm reached the "
+                "coast at 20.5N), and <b>rain over-reacted to a warm Bay of Bengal</b>, breaking the judge's 5-std stability limit "
+                "in 3 of 5 windows.",
+                "<b>Step 2, diagnosis.</b> A pointwise error loss makes \"keep the low in place\" the safest guess, and only 2% of "
+                "days have a cyclone. An advect-and-correct network that moves the weather along a learned wind field did move "
+                "storms (Fani and Amphan landfall at the right latitude), but on its own it over-reacted to shocks.",
+                "<b>Step 3, final model.</b> We fine-tuned the base CNN with the rain stability guard (fixes the overshoot), and "
+                "let the advect-and-correct network supply only pressure and winds, only inside a circle around a cyclone that is "
+                "already in the input days (cyclone mode). Everything else stays the base forecaster's output."])
     s.append(P("System", h2))
     s.append(architecture())
     s.append(P("Impact: three lenses on every what-if", h2))
