@@ -1,0 +1,16 @@
+cnn:v2_f1 [val]  auto(events)=66.87/70  auto(random)=67.0/70  gate=True
+  named real events: auto=67.0/70  ['kerala_floods', 'cyclone_titli', 'cyclone_gaja', 'cyclone_fani', 'cyclone_vayu', 'monsoon_onset_2019', 'north_india_heat']
+  events SS=0.166 (30.0/30)  CSI-skill=0.113 (15.0/15)  blur=9.9/10 ratios=[0.925000011920929, 0.36800000071525574, 0.7310000061988831, 0.527999997138977, 0.9700000286102295, 0.9520000219345093]  70 ms
+  random SS=0.130 (30.0/30)  CSI-skill=0.104 (15.0/15)  blur=10.0/10 ratios=[0.9760000109672546, 1.125, 0.7820000052452087, 0.753000020980835, 0.9359999895095825, 0.9229999780654907]  63 ms
+  named  SS=0.178 (30.0/30)  CSI-skill=0.131 (15.0/15)  blur=10.0/10 ratios=[0.9380000233650208, 0.7879999876022339, 0.8059999942779541, 0.6620000004768372, 1.065000057220459, 0.9359999895095825]  68 ms
+  shocks causality=12.00/15  windows={'monsoon_onset': 4888, 'heavy_rain': 5329, 'heatwave': 5272, 'cyclone': 5411, 'winter_disturbance': 5161}
+  spread of a 1-cell shock (cells): {'r95_day1': 4.34, 'rmax_day1': 9.9, 'r95_day4': 8.78, 'rmax_day4': 22.14}
+cnn:v2_f1 [test]  auto(events)=68.5/70  auto(random)=65.41/70  gate=True
+  named real events: auto=68.5/70  ['cyclone_amphan', 'cyclone_nisarga', 'cyclone_tauktae', 'cyclone_yaas']
+  events SS=0.153 (30.0/30)  CSI-skill=0.114 (15.0/15)  blur=10.0/10 ratios=[0.9409999847412109, 0.5189999938011169, 1.034999966621399, 0.847000002861023, 1.0140000581741333, 0.8880000114440918]  63 ms
+  random SS=0.108 (27.1/30)  CSI-skill=0.099 (14.8/15)  blur=10.0/10 ratios=[0.9879999756813049, 1.0570000410079956, 0.890999972820282, 0.8339999914169312, 0.8859999775886536, 0.9390000104904175]  66 ms
+  named  SS=0.196 (30.0/30)  CSI-skill=0.150 (15.0/15)  blur=10.0/10 ratios=[0.9660000205039978, 0.7519999742507935, 1.024999976158142, 0.8159999847412109, 0.9430000185966492, 0.949999988079071]  67 ms
+  shocks causality=13.50/15  windows={'monsoon_onset': 5624, 'heavy_rain': 5692, 'heatwave': 5621, 'cyclone': 5615, 'winter_disturbance': 5488}
+  spread of a 1-cell shock (cells): {'r95_day1': 2.54, 'rmax_day1': 9.9, 'r95_day4': 9.6, 'rmax_day4': 22.12}
+ok
+test_engine v2_f1 ok

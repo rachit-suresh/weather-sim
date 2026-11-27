@@ -1,0 +1,35 @@
+cnn:v2_f0 [val]  auto(events)=67.14/70  auto(random)=68.12/70  gate=True
+  named real events: auto=68.12/70  ['kerala_floods', 'cyclone_titli', 'cyclone_gaja', 'cyclone_fani', 'cyclone_vayu', 'monsoon_onset_2019', 'north_india_heat']
+  events SS=0.171 (30.0/30)  CSI-skill=0.095 (14.2/15)  blur=9.8/10 ratios=[0.9300000071525574, 0.3440000116825104, 0.6740000247955322, 0.5260000228881836, 0.9570000171661377, 0.9589999914169312]  60 ms
+  random SS=0.136 (30.0/30)  CSI-skill=0.108 (15.0/15)  blur=10.0/10 ratios=[0.984000027179718, 1.1449999809265137, 0.7710000276565552, 0.734000027179718, 0.9279999732971191, 0.9279999732971191]  64 ms
+  named  SS=0.190 (30.0/30)  CSI-skill=0.142 (15.0/15)  blur=10.0/10 ratios=[0.9459999799728394, 0.7200000286102295, 0.765999972820282, 0.6579999923706055, 1.0499999523162842, 0.9390000104904175]  62 ms
+  shocks causality=13.12/15  windows={'monsoon_onset': 4888, 'heavy_rain': 5329, 'heatwave': 5272, 'cyclone': 5411, 'winter_disturbance': 5161}
+  spread of a 1-cell shock (cells): {'r95_day1': 4.14, 'rmax_day1': 9.9, 'r95_day4': 8.31, 'rmax_day4': 22.73}
+cnn:v2_f0 [test]  auto(events)=67.38/70  auto(random)=66.28/70  gate=True
+  named real events: auto=67.38/70  ['cyclone_amphan', 'cyclone_nisarga', 'cyclone_tauktae', 'cyclone_yaas']
+  events SS=0.161 (30.0/30)  CSI-skill=0.111 (15.0/15)  blur=10.0/10 ratios=[0.9480000138282776, 0.5519999861717224, 1.0240000486373901, 0.824999988079071, 0.9929999709129333, 0.9089999794960022]  53 ms
+  random SS=0.116 (28.9/30)  CSI-skill=0.105 (15.0/15)  blur=10.0/10 ratios=[0.9959999918937683, 0.9629999995231628, 0.8690000176429749, 0.800000011920929, 0.8880000114440918, 0.9440000057220459]  58 ms
+  named  SS=0.198 (30.0/30)  CSI-skill=0.165 (15.0/15)  blur=10.0/10 ratios=[0.9649999737739563, 0.7429999709129333, 1.0269999504089355, 0.8100000023841858, 0.9139999747276306, 0.9570000171661377]  64 ms
+  shocks causality=12.38/15  windows={'monsoon_onset': 5624, 'heavy_rain': 5692, 'heatwave': 5621, 'cyclone': 5615, 'winter_disturbance': 5488}
+  spread of a 1-cell shock (cells): {'r95_day1': 2.16, 'rmax_day1': 9.67, 'r95_day4': 9.76, 'rmax_day4': 21.7}
+{
+ "time": "2026-11-27T03:44:20",
+ "tag": "v2_f0",
+ "model": "cnn:v2_f0",
+ "fani_err_km_d1": 350,
+ "fani_err_km_d2": 245,
+ "fani_err_km_d3": 809,
+ "fani_landfall_lat_err": 2.0,
+ "amphan_err_km_d2_TESTONLY": 786,
+ "amphan_landfall_lat_err_TESTONLY": -7.0,
+ "mean_rain_change_mm": -1.243,
+ "share_negative": 0.83,
+ "edge_rmse_std": 0.4437,
+ "interior_rmse_std": 0.5043,
+ "ms_per_rollout": 66.3
+}
+{"time": "2026-11-27T03:44:30", "tag": "v2_f0", "model": "cnn:v2_f0", "split": "val", "bias_d1": 1.108, "csi_d1": 0.554, "bias_d4": 1.213, "csi_d4": 0.426, "bias_d8": 1.368, "csi_d8": 0.358, "in_band": true}
+{"time": "2026-11-27T03:44:32", "tag": "v2_f0", "model": "cnn:v2_f0", "split": "test", "bias_d1": 1.133, "csi_d1": 0.533, "bias_d4": 1.388, "csi_d4": 0.397, "bias_d8": 1.501, "csi_d8": 0.298, "in_band": true}
+models/v2_f0.pt cnn:v2_f0 null max abs diff 0.0 rollout s (2 threads) max 0.072 mean 0.065
+ok
+test_engine v2_f0 ok

@@ -1,2 +1,5 @@
 time,tag,model,fani_err_km_d1,fani_err_km_d2,fani_err_km_d3,fani_landfall_lat_err,amphan_err_km_d2_TESTONLY,amphan_landfall_lat_err_TESTONLY,mean_rain_change_mm,share_negative,edge_rmse_std,interior_rmse_std,ms_per_rollout
 2026-11-26T23:36:43,r3_cnn_baseline,cnn:r3_cnn,350,245,809,2.0,786,-7.0,-1.289,0.92,0.441,0.5032,85.8
+2026-11-27T03:38:45,v2_f0,cnn:v2_f0,350,245,809,2.0,786,-7.0,-1.243,0.83,0.4437,0.5043,82.9
+2026-11-27T03:40:03,v2_f1,cnn:v2_f1,350,633,1076,1.0,786,-7.0,-1.368,0.92,0.4512,0.5109,85.7
+2026-11-27T03:41:20,v2_f2,cnn:v2_f2,350,245,516,2.0,786,-7.0,-1.209,0.83,0.446,0.5036,80.8

@@ -163,6 +163,9 @@ def main(argv=None):
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--no-eval", action="store_true")
     ap.add_argument("--resume", action="store_true", help="continue from runs/ckpt/<name>_last.pt if it exists")
+    ap.add_argument("--oversample", default="none", choices=["none", "cyclone", "heavy_rain"],
+                    help="V2-F-S: draw windows with a flagged target day --oversample-factor x as often")
+    ap.add_argument("--oversample-factor", type=float, default=4.0)
     ap.add_argument("--warm-start", default=None, help="checkpoint (relative to artifacts/) whose tensors with the "
                     "same name and shape initialise the net, e.g. models/r3_cnn.pt (spec V2-F-P); ignored on resume")
     a = ap.parse_args(argv)
@@ -212,19 +215,35 @@ def main(argv=None):
         st = torch.load(state_path, map_location=dev, weights_only=False)
         if st.get("args") and (st["args"]["curriculum"], st["args"]["batch"]) != (a.curriculum, a.batch):
             raise SystemExit(f"--resume needs the same --curriculum/--batch as the original run: {st['args']['curriculum']}")
+        old_os = (st.get("args") or {}).get("oversample", "none"), (st.get("args") or {}).get("oversample_factor", 4.0)
+        if st.get("args") and old_os != (a.oversample, a.oversample_factor):
+            raise SystemExit(f"--resume needs the same --oversample/--oversample-factor as the original run: {old_os}")
         net.load_state_dict(st["net"]); opt.load_state_dict(st["opt"]); sched.load_state_dict(st["sched"])
         step_count, done_ep, best = st["step_count"], st["epoch"], st["best"]
         np.random.set_state(st["np_rng"]); torch.set_rng_state(st["torch_rng"])
         print(f"resumed {a.name} after epoch {done_ep} (best val {best:.4f})", flush=True)
+    day_flag = None
+    if a.oversample != "none":                                           # V2-F-S
+        from .oversample import day_flags, window_flags
+        day_flag, th = day_flags(T.ds, a.oversample)
+        print(f"oversample {a.oversample} x{a.oversample_factor}: day threshold {th}", flush=True)
     for unroll, n_ep in cur:
         tr_idx = window_starts(T.ds, TRAIN_YEARS, unroll)
+        if day_flag is not None:
+            wf = window_flags(day_flag, tr_idx, unroll)
+            prob = np.where(wf, a.oversample_factor, 1.0); prob = prob / prob.sum()
+            print(f"unroll {unroll}: {wf.mean():.4f} of {len(tr_idx)} windows flagged, "
+                  f"{prob[wf].sum():.4f} of draws", flush=True)
         va_idx = window_starts(T.ds, VAL_YEARS, unroll, stride=3)
         for _ in range(n_ep):
             ep += 1
             if ep <= done_ep:                                            # finished before the restart
                 continue
             t0 = time.time(); net.train(); tot = 0.0
-            perm = np.random.permutation(tr_idx)
+            if day_flag is None:
+                perm = np.random.permutation(tr_idx)
+            else:                                                        # same steps per epoch, weighted draws
+                perm = np.random.choice(tr_idx, size=len(tr_idx), replace=True, p=prob)
             for bi, i in enumerate(range(0, len(perm), a.batch)):
                 hist, cf, sc, true, heavy, wet = T.batch(perm[i:i + a.batch], unroll)
                 pred, logits = rollout(net, hist, cf, sc, T.fixed, unroll, rcfg, mode="train", return_logits=True)

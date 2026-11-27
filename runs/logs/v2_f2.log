@@ -1,0 +1,10 @@
+warm start from models/r3_cnn.pt: reused 16 of 16 tensors
+cnn {} params=238,791 device=cpu rain=sqrt curriculum=[(4, 2), (8, 2)] options: edge_relax=False latlon=False rain_head=two_part shock_loss=0.0 wd=0.0001
+oversample heavy_rain x4.0: day threshold 309.0
+unroll 4: 0.1752 of 4742 windows flagged, 0.4594 of draws
+ep   1 unroll 4  train 0.8618  val 0.6416  493s
+ep   2 unroll 4  train 0.8614  val 0.6227  523s
+unroll 8: 0.2248 of 4738 windows flagged, 0.5370 of draws
+ep   3 unroll 8  train 1.0743  val 0.8064  977s
+ep   4 unroll 8  train 1.0508  val 0.8042  969s
+saved C:\Users\vangs\cursor\devforge_2\wt-f-sample\artifacts\models\v2_f2.pt best val 0.8042
