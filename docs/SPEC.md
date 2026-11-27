@@ -296,10 +296,19 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   **Result: all acceptance checks pass; kept ready, NOT served** (`docs/v2/RESULTS_CYC.md`): THR 933.3 Pa, LOST 181.8 Pa;
   val / test means 67.63 / 68.88 (= final_cnn), shocks 12.75 / 13.88 (= final_cnn), Fani 247/104/232 km (final_cnn
   247/312/322), landfall latitude exact, reach 9.9, worst firing-window rollout 164 ms (4 threads) / 185 ms (2 threads).
+- `V2-COMBO` Combined v1.2 candidate = cyclone mode A (`V2-CYC-ALL`) with its base swapped from `final_cnn` to
+  `v2_f3_all` (`V2-F3-ALL` on `v2/f-guard`: final_cnn + rain-only warm_ocean guard, 2005-2021). No new training:
+  variant A takes rain, t2m and tcwv from the base everywhere (so the F3 guard applies everywhere) and only msl/u10/v10
+  from `v2_e7c_all` inside the cyclone mask. Same detector (THR 933.3 Pa, LOST 181.8 Pa). Spec file
+  `artifacts/cyclone_f3_all.json`. Preconditions: the F3 seed rule passes (seeds 0-2) AND `v2_f3_all` passes its
+  `V2-F3-ALL` acceptance. Acceptance: the `V2-CYC-ALL` (e) list with `v2_f3_all` as the reference, plus shocks and
+  warm_ocean worst case not worse than `final_cnn`'s. Kept ready on a v2 branch; served only with the user's approval.
 - `V2-E8` Fixed-seed CRPS residual head: per-pixel noise from a fixed seed independent of the input, 2-4 members in
   training with almost-fair CRPS, serve one fixed member. Target: sharpness and csi_skill; determinism must hold.
 
 ## Change log
+
+- v2 combo (2026-11-27): `V2-COMBO` added: cyclone mode A over the F3 all-data base (user asked to combine the two).
 
 - v2 cyclone mode all-data (2026-11-27): `V2-CYC-ALL` added: `VAL-4` retrain of the cyclone-mode A candidate
   (final_cnn base, v2_e7c fine-tuned on 2005-2021, THR/LOST recomputed with the same percentile rules on 2005-2021) with
