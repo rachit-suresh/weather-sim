@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Satellite, Cpu, Settings2, Check, X, HelpCircle, Upload, Download } from "lucide-react";
+import { Satellite, Cpu, Settings2, Check, X, Presentation, Upload, Download } from "lucide-react";
 import GlitchText from "@/components/kokonutui/glitch-text";
 import type { Multiverse } from "@/state/useMultiverse";
 import { InputFileError, parseInputFile, windowToJson } from "@/lib/windows";
@@ -191,9 +191,9 @@ Run ${m.timeline.runId} · latency ${m.timeline.latencyMs.toFixed(0)} ms (server
         <button
           onClick={onHelp}
           className="flex h-7 items-center gap-1.5 border border-prime/50 bg-prime/10 px-2 font-pixel text-[8px] text-prime hover:bg-prime/20"
-          aria-label="How it works"
+          aria-label="Presentation slides"
         >
-          <HelpCircle size={12} /> <span className="hidden sm:inline">HOW IT WORKS</span>
+          <Presentation size={12} /> <span className="hidden sm:inline">SLIDES</span>
         </button>
       </div>
     </header>

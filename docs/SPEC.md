@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.16 (2026-11-27). **Status:** active.
+**Version:** 1.17 (2026-11-27). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -190,6 +190,13 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   for built-in windows, and shocks, branching, impact lenses and the cell inspector work unchanged.
   (d) "Save input" downloads the current window in the same format, as a template to edit and load back.
   (e) Inputs go only to the configured backend and live only for the page session (nothing stored).
+- `IMP-6` Presentation slides (1.17, team request for the finals): the header's help button ("Slides") opens a
+  full-screen deck instead of the how-it-works modal. (a) Big words only, one idea per slide; the presenter speaks,
+  the slides carry headlines and measured numbers. (b) Story: why a what-if twin, who it serves (offline, no GPU),
+  May 2020 (cyclone, warmer sea, heat, drier sea), bring-your-own-day (Kerala 2018), under the hood, results,
+  honest limits, thank you; the last slide keeps the how-to-use steps. (c) Groups of people, never named individuals.
+  (d) Every number is a measured value from the submitted model (as in `demo/final_demo_script`). (e) Arrow keys,
+  Space and PageUp/PageDown move; Esc closes; slide counter and dots; works at phone width.
 ## 12. Plan (updated in 1.1)
 
 - **Run 2 (now):** families CNN, U-Net, CNN+transformer hybrid, physics hybrid, ConvGRU with `REP-*`, `ROL-1..2`,
@@ -261,6 +268,7 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.4 (2026-11-26): D4 + edge relax screening added; r3_unet reuses p2_unet_d4st (identical run).
 - 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
 - 1.6 (2026-11-26): D4 + edge relax wins the screening; run 3b adds it to the other 4 families.
+- 1.17 (2026-11-27): new `IMP-6` presentation slides replace the how-it-works modal (team request for the finals).
 - 1.16 (2026-11-27): new `IMP-5` custom input in the dashboard (team request after the deadline, on branch
   `feature/custom-input`). Spec error fixed: the version line still read 1.14 after 1.15 was added.
 - 1.15 (2026-11-27): phase 4 / `REL-2`: v1.2 serves cyclone mode A over the F3 rain-guard base (from the v2 branches;
