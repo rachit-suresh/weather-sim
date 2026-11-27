@@ -304,6 +304,32 @@ export function useMultiverse() {
     void loadConnectionAndBaseline(backendUrl, win, steps);
   }, [windows, backendUrl, steps, loadConnectionAndBaseline]);
 
+  /* spec IMP-5 (c): add the user's own windows to the picker, select the first, run Prime live */
+  const addCustomWindows = useCallback((wins: DemoWindow[]) => {
+    if (wins.length === 0) return;
+    const taken = new Set(windows.map((w) => w.name));
+    const named = wins.map((w) => {
+      let name = `Your input: ${w.name}`;
+      for (let k = 2; taken.has(name); k++) name = `Your input: ${w.name} (${k})`;
+      taken.add(name);
+      return { ...w, name };
+    });
+    const nextIdx = windows.length;
+    setWindows([...windows, ...named]);
+    setWindowIdxState(nextIdx);
+    setDay(0);
+    setView("branched");
+    setQueue([]);
+    setPainted(null);
+    setError(null);
+    void loadConnectionAndBaseline(backendUrl, named[0], steps);
+  }, [windows, backendUrl, steps, loadConnectionAndBaseline]);
+
+  /* spec IMP-5 (b): a bad file changes nothing; it only reports the first problem */
+  const reportInputProblem = useCallback((message: string) => {
+    pushTask({ label: "Input not loaded", detail: message, status: "error" });
+  }, [pushTask]);
+
   const setSteps = useCallback((nextSteps: number) => {
     const clamped = Math.min(Math.min(14, maxSteps), Math.max(1, Math.round(nextSteps)));
     setStepsState(clamped);
@@ -575,7 +601,7 @@ export function useMultiverse() {
 
   return {
     backendUrl, setBackendUrl,
-    windows, windowIdx, setWindowIdx, activeWindow,
+    windows, windowIdx, setWindowIdx, activeWindow, addCustomWindows, reportInputProblem,
     steps, setSteps, maxSteps, landSeaMask,
     timeline, running, booted, error, tasks, dismissTask,
     view, setView, variable, setVariable, day, setDay, lens, setLens, playing, setPlaying,

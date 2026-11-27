@@ -33,6 +33,11 @@ rebuilds `dashboard/`). Every map is a live call to the server; nothing is pre-r
 presets, Prime vs Shocked branch timelines, impact lenses (flood risk, wet-bulb heat stress, crop water balance,
 wind and solar). Server contract for the frontend: `docs/DASHBOARD_API.md`.
 
+**Your own input** (spec `IMP-5`): "Load input" in the header reads a `.json` with the fields of a `/simulate` request,
+`init_states` [3][6][32][36] in physical units (oldest day first) and the last input day as `"date": "YYYY-MM-DD"`
+(or `day_of_year`, or `doy_sincos`). It appears as "Your input: ..." in the window picker and runs live. The save
+button next to it downloads the current window in the same format, as a template to edit.
+
 ## 3. The submitted model
 
 v1.2 (`artifacts/active.json`, spec `REL-2`) serves two networks, both trained on **all 2005-2021 data**:

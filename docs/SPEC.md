@@ -1,6 +1,6 @@
 # weather-sim specification
 
-**Version:** 1.14 (2026-11-27). **Status:** active.
+**Version:** 1.16 (2026-11-27). **Status:** active.
 **Rule:** this file is the source of truth. Every change is made here FIRST (with a change-log line), then in
 code. Each requirement has an ID (e.g. `REP-2`) so commits, issues and reviews can point at it.
 
@@ -178,6 +178,18 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   (h) backdrop behind the map (team choice "explorer's chart"): aged parchment with paper grain and vignette, faint
   graticule, portolan rhumb lines from a compass rose, a few pixel doodles (ship, sea serpent, whale) and a
   "Here be monsoons" cartouche; low contrast, static, drawn as one SVG layer under both map views.
+- `IMP-5` Custom input (1.16, team request after the deadline; branch `feature/custom-input`, not part of the
+  submitted `main`). The user can start the twin from their own weather, not only the built-in windows.
+  (a) A "Load input" button next to the window picker opens a `.json` file with the same fields as a `/simulate`
+  request: `init_states` [3][6][32][36] in physical units (t2m K, tp mm/day, u10 and v10 m/s, msl Pa, tcwv kg/m2),
+  oldest day first, and the date of the LAST input day as `doy_sincos` [sin, cos], or `day_of_year` (1-366), or
+  `date` "YYYY-MM-DD"; optional `name`. A list, or `{"windows": [...]}`, loads several windows at once.
+  (b) Validation before anything is sent: exact shape, finite numbers, one date field. On failure a plain message
+  names the first problem (e.g. "init_states[1] has 5 channels, expected 6") and the current forecast stays.
+  (c) Each valid window becomes "Your input: <name>" in the window picker and is selected; Prime runs live exactly as
+  for built-in windows, and shocks, branching, impact lenses and the cell inspector work unchanged.
+  (d) "Save input" downloads the current window in the same format, as a template to edit and load back.
+  (e) Inputs go only to the configured backend and live only for the page session (nothing stored).
 ## 12. Plan (updated in 1.1)
 
 - **Run 2 (now):** families CNN, U-Net, CNN+transformer hybrid, physics hybrid, ConvGRU with `REP-*`, `ROL-1..2`,
@@ -249,6 +261,8 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
 - 1.4 (2026-11-26): D4 + edge relax screening added; r3_unet reuses p2_unet_d4st (identical run).
 - 1.5 (2026-11-26): team asked to keep training r3_unet; it now serves as a reproducibility check.
 - 1.6 (2026-11-26): D4 + edge relax wins the screening; run 3b adds it to the other 4 families.
+- 1.16 (2026-11-27): new `IMP-5` custom input in the dashboard (team request after the deadline, on branch
+  `feature/custom-input`). Spec error fixed: the version line still read 1.14 after 1.15 was added.
 - 1.15 (2026-11-27): phase 4 / `REL-2`: v1.2 serves cyclone mode A over the F3 rain-guard base (from the v2 branches;
   results in `docs/v2/RESULTS_SUMMARY.md` on `v2/research`). Finding behind it: `final_cnn` fails the judge's
   warm_ocean "stable" check in 3 of 5 windows on 2018-19 (rain overshoot); the F3 guard targets exactly that.

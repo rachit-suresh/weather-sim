@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { Satellite, Cpu, Settings2, Check, X, HelpCircle } from "lucide-react";
+import { useRef, useState } from "react";
+import { Satellite, Cpu, Settings2, Check, X, HelpCircle, Upload, Download } from "lucide-react";
 import GlitchText from "@/components/kokonutui/glitch-text";
 import type { Multiverse } from "@/state/useMultiverse";
+import { InputFileError, parseInputFile, windowToJson } from "@/lib/windows";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** spec IMP-4f: "monsoon_onset (input ends 20200513)" -> "Monsoon onset, 13 May 2020" */
@@ -20,6 +21,29 @@ export default function HeaderBar({ m, onHelp }: { m: Multiverse; onHelp: () => 
     setDraftUrl(next);
     m.setBackendUrl(next);
     setUrlOpen(false);
+  };
+
+  /* spec IMP-5: load the user's own 3-day input from a .json file, or save the current one as a template */
+  const fileRef = useRef<HTMLInputElement>(null);
+  const onFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      m.addCustomWindows(parseInputFile(await file.text(), file.name));
+    } catch (e) {
+      m.reportInputProblem(e instanceof InputFileError ? e.message : `could not read ${file.name}`);
+    } finally {
+      if (fileRef.current) fileRef.current.value = "";   // allow loading the same file again
+    }
+  };
+  const saveInput = () => {
+    const w = m.activeWindow;
+    if (!w) return;
+    const blob = new Blob([windowToJson(w)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${w.name.replace(/^Your input: /, "").replace(/[^\w.-]+/g, "_") || "input"}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
 
   return (
@@ -86,6 +110,36 @@ Run ${m.timeline.runId} · latency ${m.timeline.latencyMs.toFixed(0)} ms (server
           </select>
         </div>
       )}
+
+      <div className="flex items-center gap-1">
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          aria-label="Input file (.json)"
+          onChange={(e) => void onFile(e.target.files?.[0])}
+        />
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="flex h-7 items-center gap-1.5 border border-branch/60 bg-branch/10 px-2 font-pixel text-[8px] text-branch hover:bg-branch/20"
+          title='Start from your own weather: a .json with init_states [3][6][32][36] in physical units (oldest day first) and the last input day as "date": "YYYY-MM-DD"'
+          aria-label="Load input"
+        >
+          <Upload size={12} /> <span className="hidden md:inline">LOAD INPUT</span>
+        </button>
+        <button
+          type="button"
+          onClick={saveInput}
+          disabled={!m.activeWindow}
+          className="grid size-7 place-items-center border border-grid-line bg-abyss text-ink-faint hover:text-ink disabled:opacity-40"
+          title="Save the current input as a .json template you can edit and load back"
+          aria-label="Save input"
+        >
+          <Download size={12} />
+        </button>
+      </div>
 
       <div className="ml-auto flex items-center gap-3 sm:gap-4">
         <div className="relative">
