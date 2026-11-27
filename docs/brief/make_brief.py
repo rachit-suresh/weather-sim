@@ -252,14 +252,26 @@ def build(out: Path, version: str):
     # ---- page 2 ----
     s.append(PageBreak())
     s.append(P("The Multiverse Map: real dashboard scenarios", h2))
-    w = 8.95 * cm
-    fig = Table([[shot("dash_rain_day3.jpg", w), shot("dash_warmbay_diff_day10.jpg", w)]], colWidths=[9.15 * cm, 9.15 * cm])
-    fig.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
-    s.append(fig)
-    s.append(P("Screenshots of the live dashboard, each map a fresh server call. Left: Prime forecast of rain, day 3, for the "
+    if new:
+        w = 5.95 * cm
+        fig = Table([[shot("v12_amphan_rain_day2.jpg", w), shot("v12_rain_day3.jpg", w), shot("v12_warmbay_diff_day10.jpg", w)]],
+                    colWidths=[6.1 * cm] * 3)
+        cap = ("Live dashboard served by v1.2 (badge: <font face='Courier'>cyclone_mode_A:v2_f3_all+v2_e7c_all</font>), each map a "
+               "fresh server call. Left: cyclone Amphan start (17 May 2020, unseen), rain on day 2: the storm's rain shield over "
+               "the north Bay heading for the Odisha / Bengal coast, with cyclone mode active. Middle: heavy-rain start of 2 Aug "
+               "2020, rain on day 3: monsoon trough band over central India and the west coast. Right: the judge's warm-Bay shock "
+               "on the same day, Shocked minus Prime rain on day 10: extra rain (orange) has moved from the Bay onto central "
+               "India, drier cells (blue) around it.")
+    else:
+        w = 8.95 * cm
+        fig = Table([[shot("dash_rain_day3.jpg", w), shot("dash_warmbay_diff_day10.jpg", w)]], colWidths=[9.15 * cm, 9.15 * cm])
+        cap = ("Screenshots of the live dashboard, each map a fresh server call. Left: Prime forecast of rain, day 3, for the "
                "heavy-rain start of 2 Aug 2020 (unseen year): the monsoon trough rain band over central India and the west coast. "
                "Right: the judge's warm-Bay shock branched from the same day, shown as Shocked minus Prime rain on day 10: extra "
-               "rain (orange) has moved from the Bay onto central India, with drier cells (blue) around it.", small))
+               "rain (orange) has moved from the Bay onto central India, with drier cells (blue) around it.")
+    fig.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+    s.append(fig)
+    s.append(P(cap, small))
     s += B(["<b>Live and offline.</b> React app, prebuilt static copy in <font face='Courier'>dashboard/</font>; ~60 ms per timeline.",
             "<b>Shock brush and presets</b> (judge's warm Bay, monsoon stall, zero shock, plus 5 more), Prime / Branched / Diff views, "
             "globe or flat pixel-art map, India-mean chart; start days from unseen years (onset, heavy rain, heatwave, cyclone, "
