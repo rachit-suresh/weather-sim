@@ -1,0 +1,11 @@
+warm start from models/r3_cnn.pt: reused 16 of 16 tensors
+cnn {} params=238,791 device=cpu rain=sqrt curriculum=[(4, 2), (8, 2)] options: edge_relax=False latlon=False rain_head=two_part shock_loss=20.0 shock_channels=tp shock_hinge=3.5 shock_box=warm_ocean wd=0.0001
+ep   1 unroll 4  train 0.8664  val 0.6311  665s  guard on 31/38 mean 1.52e-05
+ep   2 unroll 4  train 0.8602  val 0.6154  600s  guard on 32/38 mean 2.16e-05
+ep   3 unroll 8  train 1.0882  val 0.7965  1215s  guard on 24/38 mean 8.16e-06
+--- resumed after machine sleep (threads 4) ---
+warm start from models/r3_cnn.pt: reused 16 of 16 tensors
+cnn {} params=238,791 device=cpu rain=sqrt curriculum=[(4, 2), (8, 2)] options: edge_relax=False latlon=False rain_head=two_part shock_loss=20.0 shock_channels=tp shock_hinge=3.5 shock_box=warm_ocean wd=0.0001
+resumed v2_f3 after epoch 3 (best val 0.7965)
+ep   4 unroll 8  train 1.0695  val 0.7958  538s  guard on 35/38 mean 1.92e-05
+saved C:\Users\vangs\cursor\devforge_2\wt-f-guard\artifacts\models\v2_f3.pt best val 0.7958
