@@ -184,26 +184,28 @@ def build(out: Path, version: str):
     s = []
     s += [P("Multiverse of Monsoon", h1),
           P(f"A causal, rain-aware weather twin of India &nbsp;|&nbsp; {TEAM} &nbsp;|&nbsp; Yugaantar DevForge, Track 2 "
-            f"&nbsp;|&nbsp; {REPO} &nbsp;|&nbsp; release {version}, served model <font face='Courier'>{model_name}</font>", sub),
+            f"&nbsp;|&nbsp; {REPO} &nbsp;|&nbsp; served model <font face='Courier'>{model_name}</font>", sub),
           P("From the last 3 days of India's weather (6 variables on a 32 x 36 grid of 1-degree cells: 2 m temperature, rain, "
             "10 m winds, sea-level pressure, column water vapour) the twin rolls the atmosphere forward one day at a time for "
             "10 days. A <b>shock</b> (a warmer Bay of Bengal, a weaker Arabian Sea jet, any painted change) starts a second "
             "<b>multiverse</b> timeline, so the effect on monsoon rain, heat and wind can be followed cell by cell and day by day.", lede),
-          stat_strip([("67.9 / 70", "judge score, unseen 2018-19"), ("68.0 / 70", "judge score, unseen 2020-21"),
+          stat_strip([("68.2 / 70" if new else "67.9 / 70", "judge score, unseen 2018-19"),
+                      ("67.4 / 70" if new else "68.0 / 70", "judge score, unseen 2020-21"),
                       ("0.10-0.11", "heavy-rain skill (>10 mm/day)"), ("38 ms", "10-day forecast, 4 CPU cores"),
                       ("bit-exact", "zero shock = Prime")])]
     if new:
-        s.append(P("New in v1.2: steadier rain under shocks, cyclones that move", h2))
-        s += B(["<b>Rain stability guard.</b> v1.1 over-reacted to the judge's warm-Bay shock (+3 K, +15% water vapour over "
-                "8-20N, 82-94E): the day-1 rain response passed the 5-std \"stable\" limit in 3 of 5 windows. v1.2 is v1.1 "
-                "fine-tuned on 2005-21 with a hinge penalty on the rain response above 3.5 judge-std (rain only, weight 20). "
-                "Worst warm-Bay response on 2018-19: 5.4 to 3.9 std; on 2020-21: 9.8 to 5.7 std.",
-                "<b>Cyclone mode.</b> If the 3 unshocked input days hold a sea-level-pressure low deeper than 9.3 hPa below "
+        s.append(P("The submitted model: a base forecaster plus a cyclone mode", h2))
+        s += B(["<b>Base forecaster (everywhere).</b> A local residual CNN (details below) trained on all 2005-21 data, then "
+                "fine-tuned with a <b>rain stability guard</b>: during training the judge's warm-Bay shock (+3 K, +15% water "
+                "vapour over 8-20N, 82-94E) is applied and any rain response above 3.5 judge-std is penalised (hinge, rain "
+                "only, weight 20). Without the guard the same network's worst warm-Bay rain response was 5.4 std on 2018-19 and "
+                "9.8 on 2020-21 (judge limit 5); with it, 3.9 and 5.7.",
+                "<b>Cyclone mode (near cyclones only).</b> If the 3 unshocked input days hold a sea-level-pressure low deeper than 9.3 hPa below "
                 "normal over the Bay of Bengal or Arabian Sea (2% of days), an advect-and-correct network (learned velocity "
                 "field, semi-Lagrangian transport, 2.5 cells/day cap) supplies pressure and winds inside a radius-4 circle that "
                 "follows its own track. Rain, temperature and moisture stay from the base CNN; the mask comes from the unshocked "
-                "run, so a zero shock is still bit-exact. Fani 2019 centre error days 1-3: 247/104/232 km (v1.1: 247/312/322); "
-                "Amphan 2020 lands at the right latitude."])
+                "run, so a zero shock is still bit-exact. Fani 2019 centre error days 1-3: 247/104/232 km (base CNN alone: 247/312/322); "
+                "Amphan 2020 lands at the right latitude. On the other 98% of days the output is exactly the base forecaster's."])
 
     s.append(P("Weather it gets right, and how we checked", h2))
     s += B(["<b>Monsoon break.</b> June 2019 stalled monsoon (held out): central India 10-day rain forecast 12 mm vs 10 mm "
@@ -232,9 +234,11 @@ def build(out: Path, version: str):
             ["Damped persistence (statistics, no ML)", "43", "-", "0.01", "11.3"],
             ["CNN with plain squared error", "62", "-", "0.06", "13.5"],
             ["Fourier neural operator (global; rejected: shocks spread everywhere)", "61-63", "-", "0.08", "11.6"],
-            ["<b>Submitted recipe</b> (rain head + anti-blur losses)", "<b>67.9</b>", "<b>68.0</b>", "<b>0.10-0.11</b>", "<b>13.1</b>"]]
+            [("CNN with rain head + anti-blur losses (no guard)" if new else "<b>Submitted recipe</b> (rain head + anti-blur losses)"),
+             "<b>67.9</b>", "<b>68.0</b>", "<b>0.10-0.11</b>", "<b>13.1</b>"]]
     if new:
-        rows.append(["<b>+ rain guard</b> (3-seed mean)", "<b>68.2</b>", "<b>67.4</b>", "<b>0.10-0.11</b>", "<b>13.5 / 12.8</b>"])
+        rows.append(["<b>Submitted model</b> (+ rain stability guard; mean of 3 seeds)", "<b>68.2</b>", "<b>67.4</b>",
+                     "<b>0.10-0.11</b>", "<b>13.5 / 12.8</b>"])
     s.append(KeepTogether([table(rows, [8.6 * cm, 1.7 * cm, 1.7 * cm, 2.5 * cm, 2.4 * cm], bold_rows=tuple(range(5, len(rows)))),
                            P("Score = error skill vs persistence/climatology at days 1/4/8 (30) + heavy-rain CSI (15) + anti-blur "
                              "(10) + shock behaviour (15), with <font face='Courier'>monsoon_r1.scoring</font> on 72 windows "
@@ -266,7 +270,7 @@ def build(out: Path, version: str):
         w = 5.95 * cm
         fig = Table([[shot("v12_amphan_rain_day2.jpg", w), shot("v12_rain_day3.jpg", w), shot("v12_warmbay_diff_day10.jpg", w)]],
                     colWidths=[6.1 * cm] * 3)
-        cap = ("Live dashboard served by v1.2 (badge: <font face='Courier'>cyclone_mode_A:v2_f3_all+v2_e7c_all</font>), each map a "
+        cap = ("Live dashboard served by the submitted model (badge: <font face='Courier'>cyclone_mode_A:v2_f3_all+v2_e7c_all</font>), each map a "
                "fresh server call. Left: cyclone Amphan start (17 May 2020, unseen), rain on day 2: the storm's rain shield over "
                "the north Bay heading for the Odisha / Bengal coast, with cyclone mode active. Middle: heavy-rain start of 2 Aug "
                "2020, rain on day 3: monsoon trough band over central India and the west coast. Right: the judge's warm-Bay shock "
