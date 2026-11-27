@@ -1,0 +1,8 @@
+val cyclone   centre (10, 4)  reach rmax day1 (max of centre/edge/default) {'final_cnn': 9.9, 'cyc_a_all': 9.9}  warm_ocean max std {'final_cnn': 2.77, 'cyc_a_all': 2.77}  null exact
+test cyclone  centre (5, 21)  reach rmax day1 (max of centre/edge/default) {'final_cnn': 9.9, 'cyc_a_all': 9.9}  warm_ocean max std {'final_cnn': 9.78, 'cyc_a_all': 9.78}  null exact
+Fani          centre (8, 19)  reach rmax day1 (max of centre/edge/default) {'final_cnn': 9.9, 'cyc_a_all': 9.9}  warm_ocean max std {'final_cnn': 4.12, 'cyc_a_all': 4.12}  null exact
+Amphan        centre (7, 21)  reach rmax day1 (max of centre/edge/default) {'final_cnn': 9.9, 'cyc_a_all': 9.9}  warm_ocean max std {'final_cnn': 4.87, 'cyc_a_all': 4.87}  null exact
+Tauktae       centre (7, 8)  reach rmax day1 (max of centre/edge/default) {'final_cnn': 9.9, 'cyc_a_all': 9.9}  warm_ocean max std {'final_cnn': 2.17, 'cyc_a_all': 2.17}  null exact
+Yaas          centre (11, 24)  reach rmax day1 (max of centre/edge/default) {'final_cnn': 9.9, 'cyc_a_all': 9.9}  warm_ocean max std {'final_cnn': 4.18, 'cyc_a_all': 4.18}  null exact
+4 threads, 10-day rollouts on the 6 firing windows (null + warm_ocean, 10 reps, interleaved): final_cnn median 26 / p99 39 / max 43 ms, cyc_a_all median 115 / p99 157 / max 164 ms
+2 threads, 10-day rollouts on the 6 firing windows (null + warm_ocean, 10 reps, interleaved): final_cnn median 37 / p99 48 / max 51 ms, cyc_a_all median 129 / p99 179 / max 185 ms

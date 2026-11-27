@@ -82,10 +82,11 @@ def swath_masks(centres: list) -> np.ndarray:
 
 
 class CycloneMode(TwinModel):
-    def __init__(self, base: str, mover: str, variant: str = "A", threshold: float = THRESHOLD_PA):
+    def __init__(self, base: str, mover: str, variant: str = "A", threshold: float = THRESHOLD_PA,
+                 lost_pa: float = LOST_PA):
         self.base, self.mover = NeuralModel(base), NeuralModel(mover)
         self.channels = list(VARIANTS[variant])
-        self.threshold = float(threshold)
+        self.threshold, self.lost_pa = float(threshold), float(lost_pa)
         self.name = f"cyclone_mode_{variant}:{self.base.name.split(':')[-1]}+{self.mover.name.split(':')[-1]}"
 
     def rollout(self, init_states, doy, steps):
@@ -97,7 +98,7 @@ class CycloneMode(TwinModel):
         if start is None:
             return None, None
         free = self.mover.rollout(base_states, doy, steps) if mover_free is None else mover_free
-        return swath_masks(track(start, free, doy)), free
+        return swath_masks(track(start, free, doy, self.lost_pa)), free
 
     def rollout_shocked(self, init_states, base_states, doy, steps):
         r3 = self.base.rollout(init_states, doy, steps)

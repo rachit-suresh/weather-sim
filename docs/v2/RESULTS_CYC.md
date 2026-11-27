@@ -185,3 +185,94 @@ was not done (not asked).
 
 No code errors (code not matching the spec) were found in the final version. `tests/test_cyclone.py` and
 `tests/test_engine.py` pass with both variants and with the default spec, and `scripts/check_repo.py` gives 15/15.
+
+---
+
+# V2-CYC-ALL: all-data cyclone mode A candidate (kept ready, not served)
+
+Spec: `V2-CYC-ALL` (written before the code). This is the `VAL-4` retrain of variant A. It is kept on
+`v2/cyclone-mode` and has **not** been merged or served: that needs the user's personal approval.
+
+- **Base:** `models/final_cnn.pt` (the v1.1 served model), copied read-only from `origin/main`. It is the same blob
+  as on main (`bbb468a`).
+- **Mover:** `models/v2_e7c_all.pt`. Warm start from `v2_e7c` (all 31 tensors), with the same E7c network.
+  - Command: `train_nn --family advcnn --name v2_e7c_all --net '{"max_disp": 2.5, "interp": "bilinear",
+    "block_k": [3, 3, 1]}' --rain-head two_part --curriculum 4:2,8:2 --lr 3e-4 --no-eval --resume
+    --warm-start models/v2_e7c.pt --train-years 2005-2021 --final`.
+  - Epochs 1-3 ran on 2 threads (930 / 820 / 1361 s). The machine then slept, and epoch 4 was resumed from the
+    saved epoch-3 state on 4 threads (667 s).
+  - The last-epoch weights are kept (`--final`). Log: `runs/logs/v2_e7c_all.log` plus `v2_e7c_all_resume.log`.
+- **Detector:** the same rules, recomputed on all 2005-2021 days (`cyclone_calib.py --years 2005-2021`, log
+  `runs/logs/v2_cyc_all_calib.log`): THR = 933.3 Pa (9.33 hPa) and LOST = 181.8 Pa. It fires on 1.9 / 2.5 / 2.3% of
+  2005-17 / 2018-19 / 2020-21 days. The same judge windows fire as before: both `cyclone` event windows, Fani,
+  Amphan, Tauktae, Yaas and 1 val random window.
+- **Spec file:** `artifacts/cyclone_a_all.json`.
+
+## Acceptance (as v1.1 `VAL-4`)
+
+The scores are optimistic: 2018-21 is inside both models' training data. Both models were scored here side by side
+with the same code, at 4 threads, one at a time. The final_cnn rows match main's v1.1 rows exactly.
+
+| check | final_cnn | cyclone_a_all | rule | result |
+|---|---|---|---|---|
+| 2018-19 auto events / random / named (mean) | 67.39 / 67.75 / 67.75 (67.63) | 67.39 / 67.75 / 67.75 (67.63) | >= final - 0.2 | pass (0.00) |
+| 2020-21 auto events / random / named (mean) | 68.88 / 68.88 / 68.88 (68.88) | 68.88 / 68.88 / 68.88 (68.88) | >= final - 0.2 | pass (0.00) |
+| shocks 2018-19 / 2020-21 | 12.75 / 13.88 | 12.75 / 13.88 | not lower | pass |
+| uncapped ss 2018-19 events / random / named | .2026 / .1631 / .2250 | .2035 / .1628 / .2258 | report | ~ |
+| uncapped ss 2020-21 events / random / named | .2144 / .1521 / .2992 | .2119 / .1521 / .2872 | report | lower on test cyclones |
+| csi_skill (all six columns) | .1252 / .1233 / .1835; .1295 / .1284 / .2310 | identical | report | = |
+| Fani error d1 / d2 / d3 (km); landfall-lat error | 247 / 312 / 322; 0.0 | **247 / 104 / 232; 0.0** | lat not worse | pass |
+| Amphan d2 error / landfall lat (report only) | 153 km / -1.0 | **104 km / 0.0** | report | better |
+| wind-shock west-coast rain (share < 0) | -1.17 mm (83%) | -1.17 mm (83%) | report | = |
+| null test exact (evaluate null_ok, and bit-for-bit zero == none on the 6 firing windows) | yes | yes | exact | pass |
+| reach rmax day 1: evaluate probe / 6 firing windows (centre, mask edge, default cell) | 9.9 / 9.9 | 9.9 / 9.9 | <= 11 | pass |
+| warm_ocean max response on the 6 firing windows (std) | 2.77 / 9.78 / 4.12 / 4.87 / 2.17 / 4.18 | identical (variant A keeps final_cnn's rain) | report | = |
+| worst rollout, 6 firing windows, null + shocked, 10 reps, 4 threads (median / p99 / max) | 26 / 39 / 43 ms | 115 / 157 / **164 ms** | < 1 s | pass |
+| same, 2 threads | 37 / 48 / 51 ms | 129 / 179 / **185 ms** | < 1 s | pass |
+| `tests/test_engine.py` and `tests/test_cyclone.py` with `TWIN_MODEL_SPEC=artifacts/cyclone_a_all.json` (plus the defaults) | | ok | pass | pass |
+| repo scan | | 15/15 | 15/15 | pass |
+| fresh clone, plain git (no LFS): spec loads and simulates | | see below | loads | pass |
+
+Logs: `runs/logs/v2_cyc_a_all_*.log`, `runs/logs/final_cnn_*.log`, `runs/logs/v2_cyc_a_all_extra.log` (script
+`runs/cyc_all_extra.py`). Leaderboard tags: `final_cnn_val_cycbranch`, `final_cnn_test_cycbranch`,
+`v2_cyc_a_all_val` and `v2_cyc_a_all_test`. v2_checks rows: `final_cnn` and `v2_cyc_a_all`.
+
+**Reading.** The judge totals are unchanged, as with V2-CYC. The cyclone track gains survive the all-data retrain:
+on Fani the day-2/3 errors fall from 312/322 km to 104/232 km, and on Amphan the landfall latitude becomes exact.
+final_cnn has seen these storms in training, so its own tracks are already much better than r3_cnn's; even so,
+cyclone mode improves them. One cost: uncapped ss on the 2020-21 named cyclone windows falls from .2992 to .2872.
+The moved low (and its winds) is penalised on some of those windows, and the RMSE points stay capped at 30/30.
+
+## How to serve it (only with the user's approval)
+
+On the serving branch, replace the one line of `artifacts/active.json`. `models/v2_e7c_all.pt` and
+`artifacts/cyclone_a_all.json` must be on that branch too, plus this branch's `twin/models/cyclone.py`,
+`twin/models/__init__.py`, `twin/models/base.py` and `twin/engine.py`.
+
+```
+{"model": "cyclone_mode", "base": "models/final_cnn.pt", "mover": "models/v2_e7c_all.pt", "variant": "A", "threshold_pa": 933.3, "lost_pa": 181.8}
+```
+
+(or set the env `TWIN_MODEL_SPEC=artifacts/cyclone_a_all.json`, which needs no file edit). To check:
+`TWIN_MODEL_SPEC=... python tests/test_engine.py`, `python tests/test_cyclone.py` and `python scripts/check_repo.py`;
+`/health` then reports `cyclone_mode_A:final_cnn+v2_e7c_all`.
+
+**To revert:** put back the v1.1 line
+
+```
+{"model": "neural", "checkpoint": "models/final_cnn.pt"}
+```
+
+(or unset `TWIN_MODEL_SPEC`) and restart the server. The engine change is backward compatible: every other model
+ignores the unshocked states, so reverting the json alone is enough.
+
+## Errors found in V2-CYC-ALL
+
+1. **Code gap (fixed):** `v2/e7-advect-correct` was cut before main's `VAL-4` flags, so its `train_nn` had no
+   `--train-years` / `--final`. They were ported unchanged from main; the only remaining difference from main's
+   file is `--warm-start`.
+2. **Process note:** the codec's anomaly std is recomputed on 2005-2021 (as `VAL-4` does), so the warm start begins
+   under a slightly different normalisation than `v2_e7c` was trained with. The 4 fine-tune epochs absorb it. Not
+   an error, but it means `v2_e7c_all` is not exactly "v2_e7c plus more data".
+3. **Process (known hazard, `RESULTS_E7` error 1):** the machine slept during epoch 4. `--resume` restarted cleanly
+   from the saved epoch-3 state, because that state had been written before the sleep.

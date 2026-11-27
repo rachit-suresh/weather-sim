@@ -1,0 +1,7 @@
+cyclone_mode_A:final_cnn+v2_e7c_all [val]  auto(events)=67.39/70  auto(random)=67.75/70  gate=True
+  named real events: auto=67.75/70  ['kerala_floods', 'cyclone_titli', 'cyclone_gaja', 'cyclone_fani', 'cyclone_vayu', 'monsoon_onset_2019', 'north_india_heat']
+  events SS=0.204 (30.0/30)  CSI-skill=0.125 (15.0/15)  blur=9.6/10 ratios=[0.9210000038146973, 0.3140000104904175, 0.6660000085830688, 0.546999990940094, 0.9520000219345093, 0.9470000267028809]  38 ms
+  random SS=0.163 (30.0/30)  CSI-skill=0.123 (15.0/15)  blur=10.0/10 ratios=[0.9850000143051147, 0.9990000128746033, 0.7509999871253967, 0.7269999980926514, 0.9520000219345093, 0.9350000023841858]  31 ms
+  named  SS=0.226 (30.0/30)  CSI-skill=0.184 (15.0/15)  blur=10.0/10 ratios=[0.9559999704360962, 0.718999981880188, 0.7300000190734863, 0.6340000033378601, 1.090000033378601, 0.9490000009536743]  37 ms
+  shocks causality=12.75/15  windows={'monsoon_onset': 4888, 'heavy_rain': 5329, 'heatwave': 5272, 'cyclone': 5411, 'winter_disturbance': 5161}
+  spread of a 1-cell shock (cells): {'r95_day1': 3.49, 'rmax_day1': 9.9, 'r95_day4': 6.21, 'rmax_day4': 21.85}

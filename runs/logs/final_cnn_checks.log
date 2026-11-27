@@ -1,0 +1,16 @@
+{
+ "time": "2026-11-27T08:28:10",
+ "tag": "final_cnn",
+ "model": "cnn:final_cnn",
+ "fani_err_km_d1": 247,
+ "fani_err_km_d2": 312,
+ "fani_err_km_d3": 322,
+ "fani_landfall_lat_err": 0.0,
+ "amphan_err_km_d2_TESTONLY": 153,
+ "amphan_landfall_lat_err_TESTONLY": -1.0,
+ "mean_rain_change_mm": -1.173,
+ "share_negative": 0.83,
+ "edge_rmse_std": 0.429,
+ "interior_rmse_std": 0.4829,
+ "ms_per_rollout": 90.5
+}

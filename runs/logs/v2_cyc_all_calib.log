@@ -1,0 +1,41 @@
+threshold (P98 of the 2005-2021 basin minimum): 933.3 Pa = 9.33 hPa; serving default THRESHOLD_PA = 917.6
+LOST (P50 of the same): 181.8 Pa; serving default LOST_PA = 192.1
+firing rates below use THR = 933.3 Pa
+fires on days: {"train": {"days": 4748, "fires": 89, "share": 0.0187}, "val": {"days": 730, "fires": 18, "share": 0.0247}, "test": {"days": 731, "fires": 17, "share": 0.0233}}
+val: events fired ['cyclone'] of ['monsoon_onset', 'heavy_rain', 'heatwave', 'cyclone', 'winter_disturbance']
+val: named fired ['cyclone_fani'] of ['kerala_floods', 'cyclone_titli', 'cyclone_gaja', 'cyclone_fani', 'cyclone_vayu', 'monsoon_onset_2019', 'north_india_heat']
+val: random fired 1 of 60
+    monsoon_onset        last input 20180521  basin min   -1.9 hPa at 6.5N 65.5E
+    heavy_rain           last input 20190805  basin min   -7.7 hPa at 19.5N 92.5E
+    heatwave             last input 20190609  basin min   -4.6 hPa at 11.5N 71.5E
+    cyclone              last input 20191026  basin min  -14.3 hPa at 16.5N 69.5E
+    winter_disturbance   last input 20190218  basin min   -3.3 hPa at 23.5N 65.5E
+    kerala_floods        last input 20180813  basin min   -6.5 hPa at 18.5N 90.5E
+    cyclone_titli        last input 20181009  basin min   -7.8 hPa at 15.5N 86.5E
+    cyclone_gaja         last input 20181114  basin min   -4.7 hPa at 12.5N 84.5E
+    cyclone_fani         last input 20190501  basin min  -15.9 hPa at 14.5N 84.5E
+    cyclone_vayu         last input 20190610  basin min   -7.0 hPa at 13.5N 70.5E
+    monsoon_onset_2019   last input 20190606  basin min   -1.4 hPa at 10.5N 75.5E
+    north_india_heat     last input 20190531  basin min   -1.1 hPa at 6.5N 65.5E
+test: events fired ['cyclone'] of ['monsoon_onset', 'heavy_rain', 'heatwave', 'cyclone', 'winter_disturbance']
+test: named fired ['cyclone_amphan', 'cyclone_tauktae', 'cyclone_yaas'] of ['cyclone_amphan', 'cyclone_nisarga', 'cyclone_tauktae', 'cyclone_yaas']
+test: random fired 0 of 60
+    monsoon_onset        last input 20200526  basin min    1.0 hPa at 7.5N 76.5E
+    heavy_rain           last input 20200802  basin min   -5.1 hPa at 16.5N 96.5E
+    heatwave             last input 20200523  basin min   -0.5 hPa at 6.5N 82.5E
+    cyclone              last input 20200517  basin min  -18.6 hPa at 11.5N 86.5E
+    winter_disturbance   last input 20200111  basin min   -1.8 hPa at 21.5N 65.5E
+    cyclone_amphan       last input 20200518  basin min  -25.4 hPa at 13.5N 86.5E
+    cyclone_nisarga      last input 20200601  basin min   -1.0 hPa at 13.5N 71.5E
+    cyclone_tauktae      last input 20210515  basin min  -13.7 hPa at 13.5N 73.5E
+    cyclone_yaas         last input 20210524  basin min  -14.8 hPa at 17.5N 89.5E
+composite of detected training lows: radius (cells), msl anomaly / centre, wind-speed anomaly (m/s)
+    0  1.000  +0.52
+    1  0.842  +5.20
+    2  0.644  +6.43
+    3  0.508  +5.56
+    4  0.402  +4.42
+    5  0.327  +3.54
+    6  0.277  +2.94
+    7  0.237  +2.45
+    8  0.206  +2.05

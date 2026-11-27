@@ -276,10 +276,34 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   random window. A: val / test means 67.92 / 67.96 (= r3_cnn), shocks 13.12, Fani 350/0/607 km (mean 319 vs 468),
   landfall latitude exact, reach 9.90, worst rollout 548 ms. B: val 67.91, same otherwise, but inherits e7c's
   warm_ocean rain overshoot inside the mask (Fani 8.26 vs 6.42 std; not on a scored window).
+- `V2-CYC-ALL` All-data cyclone-mode candidate (`VAL-4` for `V2-CYC`; kept ready on `v2/cyclone-mode`, never merged or
+  served without the user's personal approval; `artifacts/active.json` unchanged). Variant **A only**.
+  (a) Base = `final_cnn` (the v1.1 served model: r3_cnn recipe on 2005-2021), copied read-only from `origin/main`.
+  (b) Mover = `v2_e7c_all`: warm start from `models/v2_e7c.pt`, same E7c network (`{"max_disp": 2.5, "interp":
+  "bilinear", "block_k": [3, 3, 1]}`, family advcnn, two-part rain head, no shock guard), `--train-years 2005-2021
+  --final --curriculum 4:2,8:2 --lr 3e-4 --threads 2`; codec anomaly std recomputed on 2005-2021 as in `VAL-4`;
+  per-epoch state saved (`--resume`). `train_nn` gains main's `--train-years` / `--final` (ported unchanged).
+  (c) Detector threshold THR and LOST recomputed with the SAME rules (98th / 50th percentile of the basin minimum) on
+  all days 2005-2021 (`cyclone_calib.py --years 2005-2021`). Stored in the spec file (`threshold_pa`, `lost_pa`) so
+  the V2-CYC defaults stay unchanged. Mask, tracker and output rules as `V2-CYC`.
+  (d) Spec file `artifacts/cyclone_a_all.json`.
+  (e) Acceptance (as v1.1 `VAL-4`; val and test years are inside the training data, so scores are optimistic):
+  cyclone_a_all auto mean >= final_cnn auto mean - 0.2 on 2018-19 AND on 2020-21; shocks not lower than final_cnn's;
+  Fani and Amphan tracks reported (Fani landfall latitude not worse than final_cnn's); null test exact; reach rmax
+  day 1 <= 11 on the evaluate probe AND on the detector-firing windows; `tests/test_engine.py` and
+  `tests/test_cyclone.py` pass with the new spec; worst rollout time on a firing window < 1 s on 2 AND 4 threads;
+  repo scan 15/15; a fresh clone (plain git, no LFS) loads the spec.
+  **Result: all acceptance checks pass; kept ready, NOT served** (`docs/v2/RESULTS_CYC.md`): THR 933.3 Pa, LOST 181.8 Pa;
+  val / test means 67.63 / 68.88 (= final_cnn), shocks 12.75 / 13.88 (= final_cnn), Fani 247/104/232 km (final_cnn
+  247/312/322), landfall latitude exact, reach 9.9, worst firing-window rollout 164 ms (4 threads) / 185 ms (2 threads).
 - `V2-E8` Fixed-seed CRPS residual head: per-pixel noise from a fixed seed independent of the input, 2-4 members in
   training with almost-fair CRPS, serve one fixed member. Target: sharpness and csi_skill; determinism must hold.
 
 ## Change log
+
+- v2 cyclone mode all-data (2026-11-27): `V2-CYC-ALL` added: `VAL-4` retrain of the cyclone-mode A candidate
+  (final_cnn base, v2_e7c fine-tuned on 2005-2021, THR/LOST recomputed with the same percentile rules on 2005-2021) with
+  v1.1-style acceptance checks. Kept on the branch only; serving needs the user's approval.
 
 - v2 cyclone mode (2026-11-27): `V2-CYC` added: r3_cnn + v2_e7c combined by a perturbation-independent cyclone mask
   (detector, training-only threshold, track, swath mask, variants A/B, win rule). Spec gap in `V2-WIN` closed for this

@@ -1,6 +1,7 @@
 """Cyclone-mode calibration (spec V2-CYC b, d). Training-only code.
 
-    python -m training.cyclone_calib
+    python -m training.cyclone_calib                      # V2-CYC: threshold from training years 2005-2017
+    python -m training.cyclone_calib --years 2005-2021    # V2-CYC-ALL: same rules on all years
 
 1. Threshold: 98th percentile over TRAINING days (2005-2017) of the basin minimum -(msl anomaly). Val/test years
    are only used to report how often the detector fires, never to set anything.
@@ -38,16 +39,23 @@ def basin_min(ds) -> tuple[np.ndarray, np.ndarray]:
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(); ap.add_argument("--tracker", action="store_true"); args = ap.parse_args(argv)
+    ap = argparse.ArgumentParser(); ap.add_argument("--tracker", action="store_true")
+    ap.add_argument("--years", default="2005-2017", help="years the percentiles are computed on")
+    args = ap.parse_args(argv)
+    y0, y1 = (int(x) for x in args.years.split("-"))
+    cal_years = range(y0, y1 + 1)
     ds = load()
     mn, arg = basin_min(ds)
     tr = ds.mask(TRAIN_YEARS)
-    thr = float(np.percentile(-mn[tr], PCT))
-    print(f"threshold (P{PCT:.0f} of training-day basin minimum): {thr:.1f} Pa = {thr / 100:.2f} hPa;"
-          f" serving constant THRESHOLD_PA = {THRESHOLD_PA}")
-    lost = float(np.percentile(-mn[tr], 50))
-    print(f"LOST (P50 of the same): {lost:.1f} Pa; serving constant LOST_PA = {LOST_PA}")
-    fire = -mn > THRESHOLD_PA
+    cal = ds.mask(cal_years)
+    thr = float(np.percentile(-mn[cal], PCT))
+    print(f"threshold (P{PCT:.0f} of the {args.years} basin minimum): {thr:.1f} Pa = {thr / 100:.2f} hPa;"
+          f" serving default THRESHOLD_PA = {THRESHOLD_PA}")
+    lost = float(np.percentile(-mn[cal], 50))
+    print(f"LOST (P50 of the same): {lost:.1f} Pa; serving default LOST_PA = {LOST_PA}")
+    thr_use = THRESHOLD_PA if args.years == "2005-2017" else round(thr, 1)
+    print(f"firing rates below use THR = {thr_use} Pa")
+    fire = -mn > thr_use
     rates = {}
     for lab, yrs in (("train", TRAIN_YEARS), ("val", VAL_YEARS), ("test", TEST_YEARS)):
         m = ds.mask(yrs)
