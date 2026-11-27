@@ -225,6 +225,10 @@ Background docs (explanations, not requirements): `docs/HOW_THE_MODELS_WORK.md`,
   model pass `VAL-4`-style acceptance against `final_cnn` (means >= -0.2, shocks not lower), and the fresh-clone gate
   passes (Python 3.12 sandbox packages, /health names the model, validator, null test, reach <= 11, 14-day request
   well under 5 s, repo scan 15/15, tests). Otherwise `final_cnn` (v1.1) stays.
+  **Outcome (2026-11-27 09:21): shipped by the user's explicit decision although two rules failed:** the F3 3-seed mean
+  is 68.18 / 67.41 vs r3_cnn 67.92 / 67.96 (2020-21 -0.55, shocks 12.75 vs 13.12), and `v2_f3_all` scores 68.39 /
+  68.12 vs `final_cnn` 67.63 / 68.88 (2020-21 -0.76, shocks 13.12 vs 13.88; both in-sample). Reason: warm_ocean worst
+  rain response 5.40 / 9.78 -> 3.85 / 5.71 judge std and cyclone tracks (Fani 247/104/232 km, landfall exact).
 
 ## 13. Known risks
 
