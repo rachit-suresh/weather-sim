@@ -25,13 +25,14 @@ TEAM = "Team Sage"
 REPO = "github.com/rachit-suresh/weather-sim"
 
 INK, MUTED, ACCENT, RULE = colors.HexColor("#14202b"), colors.HexColor("#5b6773"), colors.HexColor("#1d6fb8"), colors.HexColor("#c9d2da")
-body = ParagraphStyle("b", fontName="Helvetica", fontSize=7.9, leading=9.9, textColor=INK, spaceAfter=2.2)
-small = ParagraphStyle("s", parent=body, fontSize=7.0, leading=8.6, textColor=MUTED)
-h1 = ParagraphStyle("h1", fontName="Helvetica-Bold", fontSize=14, leading=16.5, textColor=INK)
-sub = ParagraphStyle("sub", parent=body, fontSize=8, textColor=MUTED, spaceAfter=4)
-h2 = ParagraphStyle("h2", fontName="Helvetica-Bold", fontSize=9.4, leading=11.5, textColor=ACCENT, spaceBefore=5, spaceAfter=2)
+body = ParagraphStyle("b", fontName="Helvetica", fontSize=8.8, leading=11.6, textColor=INK, spaceAfter=2.6)
+small = ParagraphStyle("s", parent=body, fontSize=7.6, leading=9.4, textColor=MUTED)
+h1 = ParagraphStyle("h1", fontName="Helvetica-Bold", fontSize=19, leading=22, textColor=INK)
+sub = ParagraphStyle("sub", parent=body, fontSize=8.4, leading=10.6, textColor=MUTED, spaceAfter=5)
+lede = ParagraphStyle("lede", parent=body, fontSize=10.2, leading=13.6, spaceAfter=5)
+h2 = ParagraphStyle("h2", fontName="Helvetica-Bold", fontSize=11, leading=13.5, textColor=ACCENT, spaceBefore=7, spaceAfter=3)
 bul = ParagraphStyle("bul", parent=body, leftIndent=8, bulletIndent=0, spaceAfter=1.4)
-cell = ParagraphStyle("c", parent=body, fontSize=7.1, leading=8.4, spaceAfter=0)
+cell = ParagraphStyle("c", parent=body, fontSize=8.0, leading=9.6, spaceAfter=0)
 cellb = ParagraphStyle("cb", parent=cell, fontName="Helvetica-Bold")
 
 
@@ -93,14 +94,14 @@ def heatmap(field, cmap, lo, hi, title, unit, lsm, w=180):
     return d
 
 
-def maps():
+def maps(spec):
     from monsoon_r1 import scoring as S
     from twin.climatology import load_static
     from twin.config import load_stats
     from twin.engine import Engine
     win = json.loads((ROOT / "dashboard" / "data" / "demo_windows.json").read_text())[1]     # heavy-rain window, Aug 2020
     init = np.asarray(win["init_states"], "f4"); _, std = load_stats()
-    eng = Engine()
+    eng = Engine(spec)
     base = eng.simulate(init, win["doy_sincos"], 10)
     shock = eng.simulate(init, win["doy_sincos"], 10, S.make_shock("warm_ocean", init[-1], std))
     lsm = load_static()[0]
@@ -129,7 +130,7 @@ def architecture(w=510):
     box(0, y, 88, 42, "Judge / Dashboard", ["3 days + date", "+ optional shock"], "#fdf3e7")
     box(108, y, 96, 42, "serve.py (FastAPI)", ["HTTP, JSON lists", "physical units"])
     box(224, y, 100, 42, "Engine", ["add shock, clamp", "fallback if anything fails"])
-    box(344, y, 82, 42, "Local CNN x 10", ["1 day per step", "rain gate, 38 ms"])
+    box(344, y, 82, 42, MODEL_BOX[0], MODEL_BOX[1])
     box(446, y, 64, 42, "Rollout", ["10 x 6 x 32 x 36", "physical units"], "#fdf3e7")
     for x1, x2 in ((88, 108), (204, 224), (324, 344), (426, 446)):
         arrow(x1, y + 21, x2, y + 21)
@@ -141,122 +142,135 @@ def architecture(w=510):
 
 
 # ---------- document ----------
-def build(out: Path):
-    a, b, model_name = maps()
+VERSIONS = {
+    "v1.1": dict(
+        spec={"model": "neural", "checkpoint": "models/final_cnn.pt"},
+        box=("Local CNN x 10", ["1 day per step", "rain gate, 38 ms"]),
+    ),
+    "v1.2": dict(
+        spec={"model": "cyclone_mode", "base": "models/v2_f3_all.pt", "mover": "models/v2_e7c_all.pt", "variant": "A",
+              "threshold_pa": 933.3, "lost_pa": 181.8},
+        box=("CNN (+ cyclone mode)", ["1 day per step", "38-200 ms"]),
+    ),
+}
+MODEL_BOX = VERSIONS["v1.1"]["box"]
+
+
+def stat_strip(items):
+    st = ParagraphStyle("st", parent=body, alignment=1, leading=15)
+    cells = [[Paragraph(f"<font size=15 color='#1d6fb8'><b>{v}</b></font><br/><font size=7.6 color='#5b6773'>{k}</font>", st)
+              for v, k in items]]
+    t = Table(cells, colWidths=[18.3 * cm / len(items)] * len(items))
+    t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f1f6fb")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                           ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                           ("LINEAFTER", (0, 0), (-2, 0), 0.6, colors.white)]))
+    return t
+
+
+def build(out: Path, version: str):
+    global MODEL_BOX
+    V = VERSIONS[version]; MODEL_BOX = V["box"]; new = version == "v1.2"
+    a, b, model_name = maps(V["spec"])
     s = []
-    s += [P("Multiverse of Monsoon: a local, rain-aware digital twin of India's weather", h1),
-          P(f"{TEAM} &nbsp;|&nbsp; Yugaantar DevForge, Track 2 &nbsp;|&nbsp; {REPO} &nbsp;|&nbsp; served model: {model_name}", sub)]
-    s.append(P("USP", h2))
-    s += B(["<b>Causal by construction.</b> A local CNN (7-cell reach per day) instead of global attention or Fourier layers: "
-            "95% of a one-cell shock's effect stays within 2 cells on day 1 and spreads about 9 cells by day 4; a zero shock gives "
-            "a bit-identical forecast.",
-            "<b>Rain that looks like rain.</b> A two-part rain head (\"does it rain?\" + \"how much?\") gives truly dry cells and sharp "
-            "downpours: heavy-rain skill 0.10-0.11 on held-out years (the judge's full mark needs 0.10).",
-            "<b>Chosen by evidence.</b> 30+ models from 9 families scored with the organisers' own scoring code on 72 windows "
-            "(extreme events, ordinary days, named cyclones and floods); final pick confirmed on untouched 2020-21 data, then the "
-            "same recipe retrained on all 2005-21 data for the submitted weights."])
+    s += [P("Multiverse of Monsoon", h1),
+          P(f"A fast weather twin of India that answers \"what if?\" &nbsp;|&nbsp; {TEAM} &nbsp;|&nbsp; Yugaantar DevForge, Track 2 "
+            f"&nbsp;|&nbsp; {REPO} &nbsp;|&nbsp; release {version}, served model <font face='Courier'>{model_name}</font>", sub),
+          P("Give it the last 3 days of India's weather and it forecasts the next 10 days, one day at a time, in a fraction of a "
+            "second on a laptop CPU. Change something, such as a warmer Bay of Bengal or weaker Arabian Sea winds, and it runs a "
+            "second \"multiverse\" timeline beside the real one, so you can see what that change does to rain, heat and wind, "
+            "and where.", lede),
+          stat_strip([("67.9 / 70", "automatic score, unseen 2018-19"), ("68.0 / 70", "automatic score, unseen 2020-21"),
+                      ("38 ms", "10-day forecast, 4 CPU cores"), ("exact", "zero shock = same forecast")])]
+    if new:
+        s.append(P("What is new in v1.2", h2))
+        s += B(["<b>Steadier \"what if\" rain.</b> v1.1 sometimes over-reacted to a warm Bay of Bengal: rain jumped past the "
+                "judge's stability limit in 3 of 5 windows on 2018-19. v1.2 was fine-tuned with a guard that penalises that "
+                "overshoot during training: the worst reaction on unseen 2018-19 fell from 4.6 to 3.9 (limit 5).",
+                "<b>Cyclones that move.</b> When the 3 input days already contain a deep low over the sea, a second network that "
+                "pushes the weather along a learned wind field takes over pressure and winds in a circle that follows the storm. "
+                "Cyclone Fani 2019: day-3 centre error 232 km instead of 322 km; cyclone Amphan 2020 lands at the right latitude. "
+                "On the other 97% of days the forecast is exactly the base model's."])
+    s.append(P("How it works, in four steps", h2))
+    s += B(["<b>1. Work in \"difference from normal\".</b> For every cell and day we subtract the 2005-21 average for that date, "
+            "so the network only has to learn the weather's deviation; the normal is added back at the end.",
+            "<b>2. A small, local network.</b> A 7-layer convolutional network (239k weights) looks at a 7-cell neighbourhood "
+            "around each grid cell and predicts tomorrow's change. Because it is local, a shock can only spread a few cells a "
+            "day, just like real weather.",
+            "<b>3. Rain in two parts.</b> One output decides \"does it rain here?\", another \"how much?\". This gives truly dry "
+            "areas and sharp downpours instead of a light drizzle everywhere.",
+            "<b>4. Trained on its own mistakes.</b> During training the network's forecasts are fed back into itself for 1, 2, 4 "
+            "and 8 days, so it learns not to drift. Two extra checks keep the maps sharp instead of blurring into grey."])
 
-    s.append(P("1. Model design", h2))
-    s += B(["<b>State.</b> 6 variables on the 32 x 36 grid. The network works on <i>anomalies</i>: value minus the 2005-21 daily "
-            "normal, divided by the typical anomaly size; rain in square-root space. The season is not lost: the target day's "
-            "normal is an input and is added back to the output.",
-            "<b>Inputs per forecast day (29 maps).</b> Last 3 days of anomalies (18), the target day's normal (6), land/sea and "
-            "terrain height (2), date as sin/cos (2), distance to the grid edge (1).",
-            "<b>Network.</b> Residual CNN, 7 layers of 3 x 3 convolutions, 64 channels, 239k weights. It predicts the <i>change</i> "
-            "of the anomaly; the output layer starts at zero, so an untrained model equals persistence.",
-            "<b>Rain head.</b> A 7th output is the logit of \"rain > 1 mm\". Rain = amount where the logit > 0, else exactly 0, in both "
-            "training and inference (straight-through gradients + cross-entropy loss).",
-            "<b>Rollout.</b> One day per step, 10 steps, 38 ms on 4 CPU cores, up to 0.2 s in cyclone mode (limit 5,000 ms). Outputs clamped to physical "
-            "ranges; if the model ever fails, a damped-persistence fallback answers so no request is lost."])
+    rows = [["How good is it? Judge's automatic score out of 70, on years never used for training", "2018-19", "2020-21",
+             "Heavy-rain skill", "Shocks /15"],
+            ["Guess \"same as today\"", "20", "-", "-0.04", "11.3"],
+            ["Simple statistical forecast (no machine learning)", "43", "-", "0.01", "11.3"],
+            ["Plain neural network (first try)", "62", "-", "0.06", "13.5"],
+            ["<b>Our model</b> (the recipe behind the submission)", "<b>67.9</b>", "<b>68.0</b>", "<b>0.10-0.11</b>", "<b>13.1</b>"]]
+    if new:
+        rows.append(["<b>v1.2 base</b> (with the rain guard)", "<b>68.2</b>", "<b>67.8</b>", "<b>0.10-0.11</b>", "<b>13.1-13.5</b>"])
+    s.append(KeepTogether([table(rows, [8.0 * cm, 1.9 * cm, 1.9 * cm, 2.6 * cm, 2.6 * cm], bold_rows=tuple(range(4, len(rows)))),
+                           P("Score = forecast error 30 + heavy-rain hits 15 + sharpness 10 + shock behaviour 15, computed with the "
+                             "organisers' own scoring code on 72 windows (extreme events, ordinary days, named cyclones and floods). "
+                             "We trained 30+ models from 9 families before choosing; the submitted weights are the same recipe "
+                             "retrained on all 2005-21 data.", small)]))
 
-    s.append(P("2. How we prevent drift and blur", h2))
-    s += B(["<b>Drift.</b> Training chains the model's own forecasts (1, then 2, 4 and 8 days) and scores every day, so it learns "
-            "to recover from its own errors. In anomaly space, fading back to normal is simply \"anomaly to 0\". Per-step clamp at "
-            "12 standard deviations; replicate padding plus an edge-distance input for the unseen inflow at the borders.",
-            "<b>Blur.</b> Two extra losses keep detail: the spatial spread of each predicted map must match reality, and so must its "
-            "Fourier amplitude at every scale. Rain gets a square-root transform, 3x weight on cells above 10 mm, and the hard rain "
-            "gate (0% to about 10% truly dry cells). Day-8 maps keep 74-100% of the real spatial variance (judge needs 40%).",
-            "<b>Rejected after testing.</b> Rain quantile mapping raised heavy-rain hits but cost 6-17 points on ordinary days (rain "
-            "in the wrong place, exaggerated shock responses); blending toward persistence and variance rescaling did not help."])
-
-    rows = [["Model (trained 2005-17; scored on held-out 2018-19 unless noted)", "Events", "Ordinary days", "Named events", "Heavy-rain skill", "Shocks /15"],
-            ["Persistence (\"same as today\")", "21.3", "19.6", "-", "-0.04", "11.3 (fails gate)"],
-            ["Damped persistence (no ML)", "43.7", "42.3", "-", "0.01", "11.3"],
-            ["CNN, plain squared-error loss", "62.4", "62.1", "-", "0.06", "13.5"],
-            ["Fourier operator (global, rejected)", "63.4", "61.2", "-", "0.08", "11.6, spreads over whole grid"],
-            ["<b>Final CNN</b> (rain head, sharpness losses)", "<b>67.5</b>", "<b>68.1</b>", "<b>68.1</b>", "<b>0.10</b>", "<b>13.1</b>"],
-            ["Final CNN on <b>untouched 2020-21</b>", "<b>68.1</b>", "<b>67.7</b>", "<b>68.1</b>", "<b>0.11</b>", "<b>13.1</b>"]]
-    s.append(Spacer(1, 3))
-    s.append(KeepTogether([table(rows, [5.4 * cm, 1.4 * cm, 1.9 * cm, 1.9 * cm, 2.3 * cm, 4.2 * cm], bold_rows=(5, 6)),
-                           P("Submitted (v1.2): the final CNN retrained on all 2005-21 data, fine-tuned with a rain-only stability guard (warm-Bay "
-                             "rain response kept under 3.5 of the judge's 5-std limit), plus cyclone mode: when the inputs already hold a deep "
-                             "sea low, an advect-and-correct network supplies pressure and winds in a circle that follows the storm (Fani day-3 "
-                             "error 232 vs 322 km). Scores shown are the held-out 2005-17 versions. "
-                             "Automatic score out of 70 = error skill 30 + heavy-rain hits 15 + anti-blur 10 + shock behaviour 15, computed with "
-                             "the organisers' <font face='Courier'>monsoon_r1.scoring</font>. Named events: Kerala floods 2018, cyclones Titli, "
-                             "Gaja, Fani, Vayu, onset and heat 2019 (test: Amphan, Nisarga, Tauktae, Yaas).", small)]))
-
-    s.append(P("3. Failure modes and limits (honest list)", h2))
-    s += B(["<b>Weak-wind shock.</b> Cutting Arabian Sea winds by 40% barely changes rain (+3%); physics expects less coastal rain. "
-            "The wind-to-rain link is under-learned from 17 years of daily data. The same shock box touches the grid's west edge "
-            "and fails the judge's \"spreads outward\" check in about 3 of 5 windows.",
-            "<b>Resolution.</b> At 1 degree a cyclone is 2-5 cells wide, so peak intensity is underestimated. In June 2019 the twin "
-            "caught central India's rain deficit but missed Maharashtra's (forecast -10%, real -60%).",
-            "<b>Climate shift.</b> The 2023-24 test period is warmer than the 2005-21 normal. On 2020-21 the error skill on ordinary days "
-            "already drops from 0.14 to 0.12, right at the full-marks line; expect a few points less on the hidden windows.",
-            "<b>Edges.</b> Weather entering the box is never seen; forecasts near the borders lean toward normal by day 4-10."])
+    s.append(P("What it cannot do yet", h2))
+    s += B(["<b>Inland effect of weaker winds.</b> Weaker Arabian Sea winds correctly cut coastal rain, but the effect does not "
+            "spread far inland the way it should.",
+            "<b>Coarse grid.</b> Each cell is about 110 km, so a cyclone is only 2-5 cells wide and its peak strength is "
+            "underestimated." + ("" if new else " Cyclones also tend to stay in place instead of moving to the coast."),
+            "<b>Warming.</b> The hidden test years (2023-24) are warmer than our 2005-21 normal, so we expect slightly lower scores.",
+            "<b>Edges.</b> Weather entering the box from outside is never seen, so forecasts near the borders drift toward normal."])
 
     # ---- page 2 ----
-    s.append(P("4. System architecture", h2))
+    s.append(PageBreak())
+    s.append(P("System at a glance", h2))
     s.append(architecture())
-    s.append(PageBreak())                                            # organisers: page 2 = visualization + impact
-    s.append(P("5. Visualization: the Multiverse Map", h2))
-    s += B(["<b>Live coupling.</b> The dashboard (React source in <font face='Courier'>frontend/</font>, prebuilt static copy in "
-            "<font face='Courier'>dashboard/</font>, works offline) calls our server for every timeline (about 55-65 ms); nothing is "
-            "pre-rendered. A model badge shows which network is serving.",
-            "<b>Globe and pixel-grid views</b> of India's 32 x 36 cells for any variable and day, with city stations, coastline and a "
-            "station inspector (click any cell for its values over time).",
-            "<b>Shock brush.</b> Paint a shock anywhere (temperature, rain, winds, pressure or water vapour; adjustable size), or arm "
-            "region presets such as a warm Bay of Bengal or a weaker Arabian Sea jet, then <b>branch the timeline</b>: Prime and "
-            "Shocked run side by side, with an India-mean time series of both.",
-            "<b>Start states</b> are real 3-day windows from held-out years (monsoon onset, heavy rain, heatwave, cyclone, winter rain)."])
-    fig = Table([[a, b]], colWidths=[8.6 * cm, 8.6 * cm])
+    s.append(P("The Multiverse Map (dashboard)", h2))
+    s += B(["<b>Live.</b> Every map is a fresh call to our server (about 60 ms); nothing is pre-rendered, and it works offline.",
+            "<b>Paint a shock</b> anywhere, or pick a preset such as a warm Bay of Bengal, then watch the real and the shocked "
+            "timelines side by side on a pixel-art map of India.",
+            "<b>Real start days</b> from unseen years: monsoon onset, heavy rain, heatwave, cyclone, winter rain."])
+    fig = Table([[a, b]], colWidths=[9.0 * cm, 9.0 * cm])
     fig.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
     s.append(fig)
-    s.append(P("Figure: rendered from the served model on a real held-out start state (heavy rain, 2 Aug 2020), with the dashboard's "
-               "colour scales. (b) The warm Bay of Bengal shock (+3 K, +15% water vapour) changes rain where it was applied first; the "
-               "change spreads inland over the following days.", small))
+    s.append(P("Figure, drawn live from the served model on a real unseen day (heavy rain, 2 Aug 2020). (a) Forecast rain on "
+               "day 3. (b) What a warmer Bay of Bengal (+3 C, +15% water vapour) changes: rain changes first where the shock was "
+               "applied.", small))
 
-    s.append(P("6. Impact: three lenses on every what-if", h2))
-    s.append(P("Each lens is computed from the live Prime and Shocked rollouts and shows its formula, thresholds and caveats: "
-               "<b>Flood and extreme-rain risk</b> (rain intensity, column moisture, terrain; IMD heavy 64.5 and very heavy 115.6 mm/day); "
-               "<b>Heatwave stress</b> as wet-bulb temperature from temperature and humidity (31 C dangerous, 35 C survivability limit); "
-               "<b>Crop, wind and solar</b>: crop water balance = rain minus evapotranspiration (stress below -2 mm/day), wind power "
-               "density at hub height and a solar cloud penalty. Case study, a stalled monsoon (held-out 2019):"))
-    rows2 = [["Region, 10 days after 6 June 2019 (held out)", "Normal", "Real", "Twin forecast", "Same as today", "Twin + warm Bay"],
-             ["Central India", "45 mm", "10 mm (-78%)", "<b>12 mm (-74%)</b>", "4 mm", "22 mm (+90%)"],
-             ["East India (Odisha, Bengal)", "73 mm", "16 mm (-78%)", "42 mm (-43%)", "73 mm", "64 mm (+54%)"],
-             ["Maharashtra, west-central", "60 mm", "24 mm (-60%)", "54 mm (-10%)", "13 mm", "58 mm (+8%)"]]
-    s.append(table(rows2, [5.2 * cm, 1.4 * cm, 2.3 * cm, 2.6 * cm, 2.2 * cm, 2.8 * cm]))
-    s.append(P("The twin flagged the 2019 stalled monsoon over central India 10 days ahead (-74% forecast vs -78% real), where the "
-               "\"same as today\" guess overshot and the 17-year normal said all was well; in the crop lens this is a sowing-season "
-               "water deficit. The multiverse branch adds the policy question: with a warmer Bay of Bengal, central India would have "
-               "received almost twice the rain that week.", small))
-
-    s.append(P("7. How we built it", h2))
-    s += B(["<b>Spec-driven.</b> <font face='Courier'>docs/SPEC.md</font> (v1.12) holds every decision with an ID; each change goes into the "
-            "spec first, then code. Problems are logged as code errors or spec errors (e.g. a soft-train / hard-inference rain gate "
-            "was a spec error, caught by screening and fixed).",
-            "<b>Reproducible.</b> Retraining the same recipe reproduces scores within 0.2 points; per-epoch checkpoints resume after "
-            "power cuts; repo scan 15/15, kit validator passes, weights committed as plain files."])
+    s.append(P("Impact: what a forecast means on the ground", h2))
+    s.append(P("Three lenses turn every forecast and every \"what if\" into plain risks: <b>flood risk</b> (heavy-rain thresholds "
+               "of the India Meteorological Department), <b>heat stress</b> (wet-bulb temperature; 31 C is dangerous) and "
+               "<b>crops, wind and solar</b> (rain minus evaporation, wind power, cloud cover). Example: the stalled monsoon of "
+               "June 2019, a year the model never trained on:"))
+    rows2 = [["Next 10 days after 6 June 2019", "Normal", "What happened", "Our forecast", "\"Same as today\"", "With a warm Bay"],
+             ["Central India", "45 mm", "10 mm", "<b>12 mm</b>", "4 mm", "22 mm"],
+             ["East India (Odisha, Bengal)", "73 mm", "16 mm", "42 mm", "73 mm", "64 mm"],
+             ["Maharashtra", "60 mm", "24 mm", "54 mm", "13 mm", "58 mm"]]
+    s.append(table(rows2, [5.4 * cm, 1.8 * cm, 2.6 * cm, 2.6 * cm, 2.8 * cm, 2.8 * cm]))
+    s.append(P("The twin flagged central India's rain deficit 10 days ahead (12 mm forecast vs 10 mm real, against a normal of "
+               "45 mm), which in the crop lens is a sowing-season water shortage. The multiverse branch adds the policy question: "
+               "with a warmer Bay of Bengal, central India would have had about twice the rain that week.", small))
+    s.append(P("How we built it", h2))
+    s += B(["<b>Spec first.</b> Every decision lives in <font face='Courier'>docs/SPEC.md</font>; each change goes into the spec, "
+            "then the code, and every problem is logged as a code error or a spec error.",
+            "<b>Checked like the judge.</b> Repo scan 15/15, organisers' validator passes, weights are plain files (no LFS), and "
+            "a fallback model answers if the network ever fails."])
 
     doc = SimpleDocTemplate(str(out), pagesize=A4, leftMargin=1.35 * cm, rightMargin=1.35 * cm, topMargin=1.1 * cm,
-                            bottomMargin=1.0 * cm, title="Multiverse of Monsoon - project brief", author=TEAM)
+                            bottomMargin=1.0 * cm, title=f"Multiverse of Monsoon - project brief ({version})", author=TEAM)
     doc.build(s)
 
 
 if __name__ == "__main__":
-    out = ROOT / "BRIEF.pdf"
-    build(out)
     from pypdf import PdfReader
-    print("wrote", out, "pages:", len(PdfReader(str(out)).pages))
+    served = json.loads((ROOT / "artifacts" / "active.json").read_text())
+    wanted = sys.argv[1:] or [v for v, d in VERSIONS.items() if d["spec"] == served] or ["v1.1"]
+    for v in wanted:
+        out = ROOT / "docs" / "brief" / f"BRIEF_{v}.pdf"
+        build(out, v)
+        print("wrote", out, "pages:", len(PdfReader(str(out)).pages))
+        if VERSIONS[v]["spec"] == served:
+            (ROOT / "BRIEF.pdf").write_bytes(out.read_bytes())
+            print("copied to BRIEF.pdf (served model)")
